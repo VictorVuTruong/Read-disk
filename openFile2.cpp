@@ -2,25 +2,25 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <fstream>
-#include <string>
+#include <string.h>
 #include <typeinfo>
 #include <iomanip>
+#include<sstream>
+#include <bits/stdc++.h>
 
 using namespace std;
 
 // Function prototypes
 // This is the function read the header of the disk
-void readHeader();
-
-// This is the function to get the array which contains characters get from the disk
-char getArray(int, int);
+struct VDIFile *vdiOpen(string)
 
 // This is the displayBufferPage function
-void displayBufferPage (uint32_t, uint32_t, uint64_t);
+void displayBufferPage (uint8_t *, uint32_t, uint32_t, uint64_t);
 
 // This is the displayBuffer function1
-void displayBuffer(char *, uint32_t, uint64_t);
+void displayBuffer(uint8_t *, uint32_t, uint64_t);
 
+// This is to convert char into hex
 struct HexCharStruct {
 	unsigned char c;
 	HexCharStruct (unsigned char _c) : c(_c) {
@@ -50,47 +50,59 @@ struct UUID {
 };
 
 struct HeaderStructure {
-    /** The signature */
-    uint32_t Signature;
-    /** Version */
-    uint32_t version;
-    /** Size of header*/
-    uint32_t sizeOfHeader;
+    /** Just text info about image type, for eyes only. */
+    char szFileInfo[64];
+    /** The image signature (VDI_IMAGE_SIGNATURE). */
+    uint32_t u32Signature;
+    /** The image version (VDI_IMAGE_VERSION). */
+    uint32_t u32Version;
+     /** Size of this structure in bytes. */
+    uint32_t cbHeader;
     /** The image type (VDI_IMAGE_TYPE_*). */
-    uint32_t Type;
+    uint32_t u32Type;
     /** Image flags (VDI_IMAGE_FLAGS_*). */
     uint32_t fFlags;
+    /** Image comment. (UTF-8) */
+    char szComment[256];
+    /** Offset of blocks array from the beginning of image file.
+     * Should be sector-aligned for HDD access optimization. */
+    uint32_t offBlocks;
+    /** Offset of image data from the beginning of image file.
+     * Should be sector-aligned for HDD access optimization. */
+    uint32_t offData;
+    /** Cylinders. */
+    uint32_t    cCylinders;
+    /** Heads. */
+    uint32_t    cHeads;
+    /** Sectors per track. */
+    uint32_t    cSectors;
+    /** Sector size. (bytes per sector) */
+    uint32_t    cbSector;
+    /** Was BIOS HDD translation mode, now unused. */
+    uint32_t u32Dummy;
     /** Size of disk (in bytes). */
     uint64_t cbDisk;
-    /** Block size. (For instance VDI_IMAGE_BLOCK_SIZE.) */
-    uint32_t BlockSize;
+    /** Block size. (For instance VDI_IMAGE_BLOCK_SIZE.) Should be a power of 2! */
+    uint32_t cbBlock;
+    /** Size of additional service information of every data block.
+     * Prepended before block data. May be 0.
+     * Should be a power of 2 and sector-aligned for optimization reasons. */
+    uint32_t cbBlockExtra;
     /** Number of blocks. */
-    uint32_t numOfBlocks;
+    uint32_t cBlocks;
     /** Number of allocated blocks. */
-    uint32_t numOfBlocksAllocated;
-    /** Offset block*/
-    uint32_t offsetBlocks;
-    /** Offset data */
-    uint32_t offsetData;
-    /** Cylinders*/
-    uint32_t cylinders;
-    /** Heads*/
-    uint32_t heads;
-    /** Sectors*/
-    uint32_t sectors;
-    /** SectorSize*/
-    uint32_t sectorSize;
+    uint32_t cBlocksAllocated;
     /** UUID of image. */
-    UUID uuidVDI;
-    /** UUID of image's last SNAP. */
-    UUID uuidLastSnap;
-    /** UUID link */
-    UUID UUIDLink;
-    /** UUID Parent*/
-    UUID UUIDParent;
+    char uuidCreate[16];
+    /** UUID of image's last modification. */
+    char uuidModify[16];
+    /** Only for secondary images - UUID of previous image. */
+    char uuidLinkage[16];
+    /** Only for secondary images - UUID of previous image's last modification. */
+    char uuidParentModify[16];
 };
 
-struct vdiFile {
+struct VDIFile {
     int fileDescriptor;
     HeaderStructure header;
     int cursor;
@@ -98,28 +110,42 @@ struct vdiFile {
 
 int main () {
 
-    char *buffer;
-
-    //displayBufferPage(256, 0, 0);
-
-    readHeader();
-}
-
-void displayBufferPage (uint32_t count, uint32_t start, uint64_t offset) {
-	// Establish connection to the disk
-	int fileIndex = open ("Test-dynamic-1k.vdi", O_RDONLY);
+    // Establish connection to the disk
+	//int fileIndex = open ("Test-fixed-4k.vdi", O_RDONLY);
+	ifstream is ("Test-dynamic-1k.vdi", std::ifstream::binary);
 
 	// Seek to a random location in the disk
-	cout << lseek(fileIndex, 256, SEEK_CUR) << endl;
+	//lseek(fileIndex, 0, SEEK_CUR);
 
-	char charArray [256];
+	//Get length of the fileIndex
+	is.seekg(0, is.end);
+	int length = is.tellg();
+	is.seekg(0, is.beg);
 
-	// Instantiate the array with all 0
-	for (int i = 0; i < 256; i++) {
-        charArray[i] = '0';
-	}
 
-	cout << read(fileIndex, charArray, count) << endl;
+	char * buffer = new char[length];
+
+	//Read file
+	is.read(buffer, length);
+
+
+	//char charArray [1024];
+
+	//cout << read(fileIndex, charArray, 1024) << endl;
+
+    displayBuffer((uint8_t*) buffer, 400, 0);
+
+    getHeader();
+
+    //readHeader();
+
+    //cout << hex << 'c4';
+
+    return 0;
+}
+
+void displayBufferPage (uint8_t *buffer, uint32_t count, uint32_t start, uint64_t offset) {
+
 
 	cout << "   00 01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f    0...4...8...c..." << endl;
 	cout << "  +-----------------------------------------------+  +----------------+" << endl;
@@ -127,14 +153,28 @@ void displayBufferPage (uint32_t count, uint32_t start, uint64_t offset) {
 	// First row
 	for (int j = 0; j < 16; j++) {
 		cout << setfill('0') << setw(2) << right << hex << hex(j) << "|";
-		for (int i = (j*16); i < ((j*16) + 15); i++) {
-			cout << setfill('0') << setw(2) << right << hex << hex(charArray[i]) << " ";
-		}
-		cout << setfill('0') << setw(2) << right << hex << hex(charArray[(j*16) + 15]) <<"|" << setfill('0') << setw(2) << right << hex << hex(j) <<"|";
-
 		for (int i = (j*16); i < ((j*16) + 16); i++) {
-			if (isprint(charArray[i])) {
-				cout << charArray[i];
+			if(start <= offset && i + 1 + offset <= start + count){
+				cout << setfill('0') << setw(2) << right << hex << hex(*(buffer + i + offset));
+				if(i + 1 < ((j*16) + 16)) {
+					cout << " ";
+				}
+			} else {
+				cout << "  ";
+				if(i + 1 < ((j*16) + 16)) {
+					cout << " ";
+				}
+			}
+		}
+
+		cout << "|" << setfill('0') << setw(2) << right << hex << hex(j) <<"|";
+		for (int i = (j*16); i < ((j*16) + 16); i++) {
+			if(start <= offset &&  i + 1 + offset <= start + count){
+				if (isprint(*(buffer + i + offset))) {
+					cout << *(buffer + i + offset);
+				} else {
+					cout << " ";
+				}
 			} else {
 				cout << " ";
 			}
@@ -142,198 +182,37 @@ void displayBufferPage (uint32_t count, uint32_t start, uint64_t offset) {
 		cout << "|";
 		cout << endl;
 	}
-
 	cout << endl;
 }
 
-char getArray (int offset, int index) {
-    // Establish connection to the disk
-	int fileIndex = open ("Test-dynamic-1k.vdi", O_RDONLY);
-
-	// Seek to a random location in the disk
-	lseek(fileIndex, offset, SEEK_CUR);
-
-	char charArray [256];
-
-	// Instantiate the array with all 0
-	for (int i = 0; i < 256; i++) {
-        charArray[i] = '0';
+void displayBuffer(uint8_t *buffer, uint32_t count, uint64_t offset){
+	uint64_t originalCount = count;
+	for (int i = offset; i < count; i++){
+		if(count >= 256){
+			displayBufferPage(buffer, originalCount, 0, offset);
+			count -= 256;
+			offset += 256;
+		} else if (count < 256){
+			displayBufferPage(buffer, originalCount, 0,offset);
+			break;
+		}
 	}
-
-	read(fileIndex, charArray, 256);
-
-	return charArray[index];
 }
 
-void readHeader () {
-    // Data from the first 256 bytes
-    char charArray1 [256];
+struct VDIFile *vdiOpen (string fileName) {
+    // Establish connection to the disk
+	int fileIndex = open (fileName, O_RDONLY);
 
-    for (int i = 0; i < 256; i++) {
-        charArray1[i] = getArray(0, i);
-    }
+    // Header structure
+    struct HeaderStructure header = {};
 
-    // Data from the next 256 bytes
-    char charArray2 [256];
+	// Seek to a random location in the disk
+	lseek(fileIndex, 0, SEEK_CUR);
 
-    for (int i = 0; i < 256; i++) {
-        charArray2[i] = getArray(256, i);
-    }
+	// Read the header into the header structure
+	read(fileIndex, &header, 400);
 
-    // Print the name
-    cout << "Name: ";
-    for (int i = 0; i < 48; i++) {
-        if (isprint(charArray1[i])) {
-            cout << charArray1[i];
-        }
-    }
-    cout << endl;
-
-    // Print the Image signature
-    cout << "Signature: ";
-    for (int i = 64; i < 68; i++) {
-        cout << setfill('0') << setw(2) << right << hex << hex(charArray1[i]);
-    }
-    cout << endl;
-
-    // Print the version
-    cout << "Version: ";
-    for (int i = 68; i < 72; i++) {
-        cout << setfill('0') << setw(2) << right << hex << hex(charArray1[i]);
-    }
-    cout << endl;
-
-    // Print the size of header
-    cout << "Size of header: ";
-    for (int i = 72; i < 76; i++) {
-        cout << setfill('0') << setw(2) << right << hex << hex(charArray1[i]);
-    }
-    cout << endl;
-
-    // Print the image type
-    cout << "Image type: ";
-    for (int i = 76; i < 80; i++) {
-        cout << setfill('0') << setw(2) << right << hex << hex(charArray1[i]);
-    }
-    cout << endl;
-
-    // Print the image flag
-    cout << "Image flag: ";
-    for (int i = 80; i < 84; i++) {
-        cout << setfill('0') << setw(2) << right << hex << hex(charArray1[i]);
-    }
-    cout << endl;
-
-    // Image Description
-    cout << "Image Description: ";
-    for (int i = 84; i < 96; i++) {
-        cout << setfill('0') << setw(2) << right << hex << hex(charArray1[i]);
-    }
-    cout << endl;
-
-    //offsetBlocks
-    cout << "offsetBlocks: ";
-    for (int i = 84; i < 88; i++) {
-        cout << setfill('0') << setw(2) << right << hex << hex(charArray2[i]);
-    }
-    cout << endl;
-
-    // offsetData
-    cout << "offsetData: ";
-    for (int i = 88; i < 92; i++) {
-        cout << setfill('0') << setw(2) << right << hex << hex(charArray2[i]);
-    }
-    cout << endl;
-
-    // Cylinders
-    cout << "Cylinders: ";
-    for (int i = 92; i < 96; i++) {
-        cout << setfill('0') << setw(2) << right << hex << hex(charArray2[i]);
-    }
-    cout << endl;
-
-    // Heads
-    cout << "Heads: ";
-    for (int i = 96; i < 100; i++) {
-        cout << setfill('0') << setw(2) << right << hex << hex(charArray2[i]);
-    }
-    cout << endl;
-
-    // Sectors
-    cout << "Sectors: ";
-    for (int i = 100; i < 104; i++) {
-        cout << setfill('0') << setw(2) << right << hex << hex(charArray2[i]);
-    }
-    cout << endl;
-
-    // SectorSize
-    cout << "SectorSize ";
-    for (int i = 104; i < 108; i++) {
-        cout << setfill('0') << setw(2) << right << hex << hex(charArray2[i]);
-    }
-    cout << endl;
-
-    //DiskSize
-    cout << "DiskSize: ";
-    for (int i = 112; i < 120; i++) {
-        cout << setfill('0') << setw(2) << right << hex << hex(charArray2[i]);
-    }
-    cout << endl;
-
-    //BlockSize
-    cout << "BlockSize: ";
-    for (int i = 120; i < 124; i++) {
-        cout << setfill('0') << setw(2) << right << hex << hex(charArray2[i]);
-    }
-    cout << endl;
-
-    // Block Extra Data
-    cout << "Block Extra Data: ";
-    for (int i = 124; i < 128; i++) {
-        cout << setfill('0') << setw(2) << right << hex << hex(charArray2[i]);
-    }
-    cout << endl;
-
-    //Number of BlocksInHDD
-    cout << "Number of BlocksInHDD: ";
-    for (int i = 128; i < 132; i++) {
-        cout << setfill('0') << setw(2) << right << hex << hex(charArray2[i]);
-    }
-    cout << endl;
-
-    // Number of BlocksAllocated
-    cout << "Number of BlocksAllocated: ";
-    for (int i = 132; i < 136; i++) {
-        cout << setfill('0') << setw(2) << right << hex << hex(charArray2[i]);
-    }
-    cout << endl;
-
-    // UUID of this VDI
-    cout << "UUID of this VDI: ";
-    for (int i = 136; i < 152; i++) {
-        cout << setfill('0') << setw(2) << right << hex << hex(charArray2[i]);
-    }
-    cout << endl;
-
-    // UUID of last SNAP
-    cout << "UUID of last SNAP: ";
-    for (int i = 152; i < 168; i++) {
-        cout << setfill('0') << setw(2) << right << hex << hex(charArray2[i]);
-    }
-    cout << endl;
-
-    // UUID link
-    cout << "UUID link: ";
-    for (int i = 168; i < 184; i++) {
-        cout << setfill('0') << setw(2) << right << hex << hex(charArray2[i]);
-    }
-    cout << endl;
-
-    // UUID Parent
-    cout << "UUID Parent: ";
-    for (int i = 184; i < 200; i++) {
-        cout << setfill('0') << setw(2) << right << hex << hex(charArray2[i]);
-    }
-    cout << endl;
+	// VDIFile header
+	struct VDIFile vdiFileStruct = {};
 }
 
