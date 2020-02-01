@@ -12,13 +12,22 @@ using namespace std;
 
 // Function prototypes
 // This is the function read the header of the disk
-struct VDIFile *vdiOpen(string)
+struct VDIFile *vdiOpen();
 
 // This is the displayBufferPage function
 void displayBufferPage (uint8_t *, uint32_t, uint32_t, uint64_t);
 
 // This is the displayBuffer function1
 void displayBuffer(uint8_t *, uint32_t, uint64_t);
+
+// This is the vdiClose function
+void vdiClose (struct VDIFile *);
+
+// This is the vdiRead function
+ssize_t vdiRead (struct VDIFile *, char *, int);
+
+// This is the vdiWrite function
+ssize_t vdiWrite (struct VDIFile *, char *, int);
 
 // This is to convert char into hex
 struct HexCharStruct {
@@ -111,35 +120,28 @@ struct VDIFile {
 int main () {
 
     // Establish connection to the disk
-	//int fileIndex = open ("Test-fixed-4k.vdi", O_RDONLY);
 	ifstream is ("Test-dynamic-1k.vdi", std::ifstream::binary);
-
-	// Seek to a random location in the disk
-	//lseek(fileIndex, 0, SEEK_CUR);
 
 	//Get length of the fileIndex
 	is.seekg(0, is.end);
 	int length = is.tellg();
 	is.seekg(0, is.beg);
 
-
+	// char buffer to hold the bytes to be displayed by displayBufferPage
 	char * buffer = new char[length];
 
 	//Read file
 	is.read(buffer, length);
 
-
-	//char charArray [1024];
-
-	//cout << read(fileIndex, charArray, 1024) << endl;
-
+	// Display buffer
     displayBuffer((uint8_t*) buffer, 400, 0);
 
-    getHeader();
+    // char buffer to hold the bytes to be read by read function (Let it be 256 for now)
+    char *bufferRead = new char[256];
 
-    //readHeader();
+    //cout << vdiRead(vdiOpen(), bufferRead, 200);
 
-    //cout << hex << 'c4';
+    cout << (*vdiOpen()).header.u32Version;
 
     return 0;
 }
@@ -193,15 +195,15 @@ void displayBuffer(uint8_t *buffer, uint32_t count, uint64_t offset){
 			count -= 256;
 			offset += 256;
 		} else if (count < 256){
-			displayBufferPage(buffer, originalCount, 0,offset);
+			displayBufferPage(buffer, originalCount, 0, offset);
 			break;
 		}
 	}
 }
 
-struct VDIFile *vdiOpen (string fileName) {
+struct VDIFile *vdiOpen () {
     // Establish connection to the disk
-	int fileIndex = open (fileName, O_RDONLY);
+	int fileIndex = open ("Test-fixed-1k.vdi", O_RDONLY);
 
     // Header structure
     struct HeaderStructure header = {};
@@ -213,6 +215,35 @@ struct VDIFile *vdiOpen (string fileName) {
 	read(fileIndex, &header, 400);
 
 	// VDIFile header
-	struct VDIFile vdiFileStruct = {};
+	struct VDIFile vdiFileStruct = {fileIndex, header, 0};
+
+	// Pointer to the vdiFile structure
+	VDIFile *ptr;
+
+	// Make the pointer points to the structure
+	ptr = &vdiFileStruct;
+
+	// Return the pointer to the structure
+	cout << ptr;
+	return ptr;
+}
+
+void vdiClose(struct VDIFile *f) {
+    // Close the file whose file handler is given
+    close((*f).fileDescriptor);
+
+    // Deallocate created memory regions
+    delete f;
+}
+
+ssize_t vdiRead(struct VDIFile *f, char *buf, int counts) {
+    // Read the given number of bytes into the buffer passed to this function as a parameter
+    int numOfBytesRead = read((*f).fileDescriptor, buf, counts);
+
+    // Advance the cursor by the number of bytes read
+    (*f).cursor = numOfBytesRead;
+
+    // Return the number of bytes read
+    return numOfBytesRead;
 }
 
