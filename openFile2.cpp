@@ -12,7 +12,7 @@ using namespace std;
 
 // Function prototypes
 // This is the function read the header of the disk
-struct VDIFile *vdiOpen();
+struct VDIFile *vdiOpen(const char *);
 
 // This is the displayBufferPage function
 void displayBufferPage (uint8_t *, uint32_t, uint32_t, uint64_t);
@@ -49,17 +49,6 @@ inline HexCharStruct hex (unsigned char _c) {
 }
 
 // Structures declaration
-
-struct UUID {
-    uint32_t
-        timeLow;
-    uint16_t
-        timeMid,
-        timeHigh,
-        clock;
-    uint8_t
-        node[6];
-};
 
 struct HeaderStructure {
     /** Just text info about image type, for eyes only. */
@@ -144,7 +133,7 @@ int main () {
 
     //cout << vdiRead(vdiOpen(), bufferRead, 200);
 
-    cout << (*vdiOpen()).header.u32Version;
+    cout << (*vdiOpen("Test-dynamic-1k.vdi")).header.u32Version;
 
     return 0;
 }
@@ -204,7 +193,7 @@ void displayBuffer(uint8_t *buffer, uint32_t count, uint64_t offset){
 	}
 }
 
-struct VDIFile *vdiOpen () {
+struct VDIFile *vdiOpen (const char * fn) {
     // Establish connection to the disk
 	int fileIndex = open ("Test-fixed-1k.vdi", O_RDONLY);
 
