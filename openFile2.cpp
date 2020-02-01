@@ -29,6 +29,9 @@ ssize_t vdiRead (struct VDIFile *, char *, int);
 // This is the vdiWrite function
 ssize_t vdiWrite (struct VDIFile *, char *, int);
 
+// This is the vdiSeek function
+off_t vdiSeek (VDIFile *, off_t, int);
+
 // This is to convert char into hex
 struct HexCharStruct {
 	unsigned char c;
@@ -224,7 +227,7 @@ struct VDIFile *vdiOpen () {
 	ptr = &vdiFileStruct;
 
 	// Return the pointer to the structure
-	cout << ptr;
+	//cout << ptr;
 	return ptr;
 }
 
@@ -237,13 +240,45 @@ void vdiClose(struct VDIFile *f) {
 }
 
 ssize_t vdiRead(struct VDIFile *f, char *buf, int counts) {
+    // Use lseek to seek the cursor to the location need to be read
+    lseek((*f).fileDescriptor, (*f).cursor, SEEK_CUR);
+
     // Read the given number of bytes into the buffer passed to this function as a parameter
     int numOfBytesRead = read((*f).fileDescriptor, buf, counts);
 
     // Advance the cursor by the number of bytes read
-    (*f).cursor = numOfBytesRead;
+    (*f).cursor += numOfBytesRead;
 
     // Return the number of bytes read
     return numOfBytesRead;
+}
+
+ssize_t vdiWrite(struct VDIFile *f, char *buf, int counts) {
+    // Use lseek to seek the cursor to the location need to be read
+    lseek((*f).fileDescriptor, (*f).cursor, SEEK_CUR);
+
+    // Write the given number of bytes from the given buffer to the disk
+    int numOfBytesWritten = write((*f).fileDescriptor, buf, counts);
+
+    // Advance the cursor by the number of bytes read
+    (*f).cursor += numOfBytesWritten;
+
+    // Return the number of bytes read
+    return numOfBytesWritten;
+}
+
+off_t vdiSeek (struct VDIFile *f, off_t offset, int anchor) {
+    // If the given location is beyond the disk space, return 0 for the function
+    if ((offset + anchor > (*f).header.cbDisk) || (offset + anchor < 0)) {
+        return 0;
+    }
+    // Else if the given location is within disk size, move the cursor there and return the offset + anchor for the function
+    else {
+        // Set the cursor for the VDIFile structure to the given location
+        (*f).cursor = offset + anchor;
+
+        // Return the offset + anchor for the function
+        return offset + anchor;
+    }
 }
 
