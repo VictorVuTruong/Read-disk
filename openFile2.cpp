@@ -126,7 +126,7 @@ int main () {
 	is.read(buffer, length);
 
 	// Display buffer
-    displayBuffer((uint8_t*) buffer, 400, 0);
+    displayBufferPage((uint8_t*) buffer, 400, 0, 0);
 
     // char buffer to hold the bytes to be read by read function (Let it be 256 for now)
     char *bufferRead = new char[256];
@@ -230,7 +230,8 @@ void vdiClose(struct VDIFile *f) {
 
 ssize_t vdiRead(struct VDIFile *f, char *buf, int counts) {
     // Use lseek to seek the cursor to the location need to be read
-    lseek((*f).fileDescriptor, (*f).cursor, SEEK_CUR);
+    // The location to start reading is the current value of the VDIFile cursor plus the data offset
+    lseek((*f).fileDescriptor, (*f).cursor + (*f).header.offData, SEEK_CUR);
 
     // Read the given number of bytes into the buffer passed to this function as a parameter
     int numOfBytesRead = read((*f).fileDescriptor, buf, counts);
@@ -244,7 +245,8 @@ ssize_t vdiRead(struct VDIFile *f, char *buf, int counts) {
 
 ssize_t vdiWrite(struct VDIFile *f, char *buf, int counts) {
     // Use lseek to seek the cursor to the location need to be read
-    lseek((*f).fileDescriptor, (*f).cursor, SEEK_CUR);
+    // The location to start writing is the current value of VDIFile cursor plus the data offset
+    lseek((*f).fileDescriptor, (*f).cursor + (*f).header.offData, SEEK_CUR);
 
     // Write the given number of bytes from the given buffer to the disk
     int numOfBytesWritten = write((*f).fileDescriptor, buf, counts);
@@ -257,17 +259,26 @@ ssize_t vdiWrite(struct VDIFile *f, char *buf, int counts) {
 }
 
 off_t vdiSeek (struct VDIFile *f, off_t offset, int anchor) {
-    // If the given location is beyond the disk space, return 0 for the function
-    if ((offset + anchor > (*f).header.cbDisk) || (offset + anchor < 0)) {
-        return 0;
-    }
-    // Else if the given location is within disk size, move the cursor there and return the offset + anchor for the function
-    else {
-        // Set the cursor for the VDIFile structure to the given location
-        (*f).cursor = offset + anchor;
+    // New location of the cursor
+    off_t newLoc;
 
-        // Return the offset + anchor for the function
-        return offset + anchor;
+    // Set the right new location based on the anchor
+    if (anchor == SEEK_SET) {
+        newLoc = offset;
+    } else if (anchor == SEEK_CUR) {
+        newLoc = offset + (*f).cursor;
+    } else if (anchor == SEEK_END) {
+        newLoc = offset + (*f).header.cbDisk;
+    } else {
+        newLoc = (*f).cursor;
     }
+
+    // Check if new location is valid or not
+    if (newLoc >= 0 && newLoc <= (*f).header.cbDisk) {
+        (*f).cursor = newLoc;
+    }
+
+    // Return the new location
+    return newLoc;
 }
 
