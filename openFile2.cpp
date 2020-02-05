@@ -111,27 +111,14 @@ struct VDIFile {
 
 int main () {
 
-    // Establish connection to the disk
-	ifstream is ("Test-dynamic-1k.vdi", std::ifstream::binary);
-
-	//Get length of the fileIndex
-	is.seekg(0, is.end);
-	int length = is.tellg();
-	is.seekg(0, is.beg);
-
 	// char buffer to hold the bytes to be displayed by displayBufferPage
-	char * buffer = new char[length];
-
-	//Read file
-	is.read(buffer, length);
+	char * buffer = new char[256];
 
 	// Display buffer
-    displayBufferPage((uint8_t*) buffer, 400, 0, 0);
+    displayBuffer((uint8_t*)buffer, 400, 0);
 
     // char buffer to hold the bytes to be read by read function (Let it be 256 for now)
     char *bufferRead = new char[256];
-
-    //cout << vdiRead(vdiOpen(), bufferRead, 200);
 
     cout << (*vdiOpen("Test-dynamic-1k.vdi")).header.u32Version;
 
@@ -140,24 +127,24 @@ int main () {
 
 void displayBufferPage (uint8_t *buffer, uint32_t count, uint32_t start, uint64_t offset) {
 
+    int fileHandler = open("Test-dynamic-1k.vdi", O_RDONLY);
 
-	cout << "   00 01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f    0...4...8...c..." << endl;
-	cout << "  +-----------------------------------------------+  +----------------+" << endl;
+    lseek(fileHandler, offset, SEEK_CUR);
+
+    read(fileHandler, buffer, count);
+
+	cout << "   00 01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f     0...4...8...c..." << endl;
+	cout << "  +------------------------------------------------+  +----------------+" << endl;
 
 	// First row
 	for (int j = 0; j < 16; j++) {
 		cout << setfill('0') << setw(2) << right << hex << hex(j) << "|";
 		for (int i = (j*16); i < ((j*16) + 16); i++) {
-			if(start <= offset && i + 1 + offset <= start + count){
-				cout << setfill('0') << setw(2) << right << hex << hex(*(buffer + i + offset));
-				if(i + 1 < ((j*16) + 16)) {
+			if(start <= offset && i + 1 <= start + count){
+				cout << setfill('0') << setw(2) << right << hex << hex(*(buffer + i));
 					cout << " ";
-				}
 			} else {
-				cout << "  ";
-				if(i + 1 < ((j*16) + 16)) {
-					cout << " ";
-				}
+				cout << "   ";
 			}
 		}
 
@@ -181,14 +168,15 @@ void displayBufferPage (uint8_t *buffer, uint32_t count, uint32_t start, uint64_
 
 void displayBuffer(uint8_t *buffer, uint32_t count, uint64_t offset){
 	uint64_t originalCount = count;
-	for (int i = offset; i < count; i++){
-		if(count >= 256){
-			displayBufferPage(buffer, originalCount, 0, offset);
-			count -= 256;
-			offset += 256;
-		} else if (count < 256){
-			displayBufferPage(buffer, originalCount, 0, offset);
-			break;
+	uint64_t currentOffset = offset;
+	cout << "Num of time to loop " << count/256 + 1 << endl;
+	for (int i = 0; i < ((int)count/256)+1; i++){
+		if(originalCount >= 256){
+			displayBufferPage(buffer, 256, 0, currentOffset);
+			originalCount -= 256;
+			currentOffset += 256;
+		} else if (originalCount < 256){
+			displayBufferPage(buffer, 256-originalCount, 0, currentOffset);
 		}
 	}
 }
@@ -281,4 +269,3 @@ off_t vdiSeek (struct VDIFile *f, off_t offset, int anchor) {
     // Return the new location
     return newLoc;
 }
-
