@@ -14,6 +14,9 @@ using namespace std;
 // This is the function read the header of the disk
 struct VDIFile *vdiOpen(const char *);
 
+// This is the partition open function
+struct PartitionFile *partitionOpen(struct VDIFile *,struct PartitionEntry);
+
 // This is the displayBufferPage function
 void displayBufferPage (uint8_t *, uint32_t, uint32_t, uint64_t);
 
@@ -24,7 +27,7 @@ void displayBuffer(uint8_t *, uint32_t, uint64_t);
 void vdiClose (struct VDIFile *);
 
 // This is the vdiRead function
-ssize_t vdiRead (struct VDIFile *, char *, int);
+ssize_t vdiRead (struct VDIFile *, PartitionEntry *, int);
 
 // This is the vdiWrite function
 ssize_t vdiWrite (struct VDIFile *, char *, int);
@@ -103,24 +106,76 @@ struct HeaderStructure {
     char uuidParentModify[16];
 };
 
+struct PartitionEntry {
+    /** Status */
+    uint32_t status;
+    /** CHS Address of first sector */
+    uint32_t CHSAddressFirstSector;
+    /** Number of heads in first sector */
+    uint32_t numOfHeadsFirstSector;
+    /** Number of sectors in first sector*/
+    uint32_t numOfSectorsFirstSector;
+    /** Number of cylinders in first sector*/
+    uint32_t numOfCylindersFirstSector;
+    /** Partition type */
+    uint32_t partitionType;
+    /** CHS Address of last sector */
+    uint32_t CHSAddressLastSector;
+    /** Number of heads in last sector */
+    uint32_t numOfHeadsLastSector;
+    /** Number of sectors in last sector */
+    uint32_t numOfSectorsLastSector;
+    /** Number of cylinders in last sector */
+    uint32_t numOfCylindersLastSector;
+    /** First LBA sector */
+    uint32_t firstLBASector;
+    /** Number of sectors in partition */
+    uint32_t sectorCount;
+};
+
 struct VDIFile {
+    /** File descriptor */
     int fileDescriptor;
+    /** Header structure */
     HeaderStructure header;
+    /** Cursor */
     int cursor;
+};
+
+struct PartitionFile {
+    /** VDI File */
+    VDIFile * vdiFile;
+    /** Partition Entry 1*/
+    //PartitionEntry arrayOfPartitionEntry1;
+    /** Partition Entry 2*/
+    //PartitionEntry arrayOfPartitionEntry2;
+    /** Partition Entry 3*/
+    //PartitionEntry arrayOfPartitionEntry3;
+    /** Partition Entry 4*/
+    //PartitionEntry arrayOfPartitionEntry4;
+    PartitionEntry table[4];
 };
 
 int main () {
 
 	// char buffer to hold the bytes to be displayed by displayBufferPage
-	char * buffer = new char[256];
+	//char * buffer = new char[256];
 
 	// Display buffer
-    displayBuffer((uint8_t*)buffer, 400, 0);
+    //displayBuffer((uint8_t*)buffer, 256, 0);
 
     // char buffer to hold the bytes to be read by read function (Let it be 256 for now)
-    char *bufferRead = new char[256];
+    //char *bufferRead = new char[256];
 
-    cout << (*vdiOpen("Test-dynamic-1k.vdi")).header.u32Version;
+    VDIFile * vdiFileStruct = vdiOpen("Test-dynamic-1k.vdi");
+
+    struct PartitionEntry partitionEntry = {};
+
+    PartitionFile * partitionFile = partitionOpen(vdiFileStruct,partitionEntry);
+
+    cout << (*partitionFile).table[0].numOfSectorsFirstSector << endl;
+
+    //cout << (*vdiFileStruct).header.cbHeader;
 
     return 0;
 }
@@ -183,9 +238,9 @@ void displayBuffer(uint8_t *buffer, uint32_t count, uint64_t offset){
 
 struct VDIFile *vdiOpen (const char * fn) {
     // Establish connection to the disk
-	int fileIndex = open ("Test-fixed-1k.vdi", O_RDONLY);
+	int fileIndex = open (fn, O_RDONLY);
 
-    // Header structure
+    // Header structureTest-dynamic-1k.vdi
     struct HeaderStructure header = {};
 
 	// Seek to a random location in the disk
@@ -204,9 +259,31 @@ struct VDIFile *vdiOpen (const char * fn) {
 	ptr = &vdiFileStruct;
 
 	// Return the pointer to the structure
-	//cout << ptr;
 	return ptr;
 }
+
+struct PartitionFile *partitionOpen(struct VDIFile * vdiFile, struct PartitionEntry partitionEntry) {
+    // Array which contains 4 entries
+    PartitionEntry arrayOfEntries [4] = {partitionEntry, partitionEntry, partitionEntry, partitionEntry};
+
+    // Use vdiSeek to seek to the location of the partition table
+    vdiSeek(vdiFile, 446, SEEK_SET);
+
+    // Use vdiRead to read the data of the partition table into the array of entries
+    vdiRead(vdiFile, arrayOfEntries, 64);
+
+    // PartitionFile header
+	struct PartitionFile partitionFile = {vdiFile, arrayOfEntries[4]};
+
+    // Pointer to the partitionFile structure
+	PartitionFile *ptr1;
+
+	// Make the pointer points to the structure
+	ptr1 = &partitionFile;
+
+	// Return the pointer
+	return ptr1;
+};
 
 void vdiClose(struct VDIFile *f) {
     // Close the file whose file handler is given
@@ -216,7 +293,7 @@ void vdiClose(struct VDIFile *f) {
     delete f;
 }
 
-ssize_t vdiRead(struct VDIFile *f, char *buf, int counts) {
+ssize_t vdiRead(struct VDIFile *f, PartitionEntry *buf, int counts) {
     // Use lseek to seek the cursor to the location need to be read
     // The location to start reading is the current value of the VDIFile cursor plus the data offset
     lseek((*f).fileDescriptor, (*f).cursor + (*f).header.offData, SEEK_CUR);
@@ -269,3 +346,4 @@ off_t vdiSeek (struct VDIFile *f, off_t offset, int anchor) {
     // Return the new location
     return newLoc;
 }
+
