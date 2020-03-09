@@ -30,7 +30,7 @@ void vdiClose (struct VDIFile *);
 ssize_t vdiRead (struct VDIFile *, PartitionEntry *, int);
 
 // This is the vdiWrite function
-ssize_t vdiWrite (struct VDIFile *, char *, int);
+ssize_t vdiWrite (struct VDIFile *, PartitionEntry *, int);
 
 // This is the vdiSeek function
 off_t vdiSeek (VDIFile *, off_t, int);
@@ -39,7 +39,13 @@ off_t vdiSeek (VDIFile *, off_t, int);
 void partitionClose(struct PartitionFile *);
 
 // This is the function partitionRead
-ssize_t partitionRead(struct PartitionFile *,void *,size_t);
+ssize_t partitionRead(struct PartitionFile *,PartitionEntry *,size_t);
+
+// This is the function partitionWrite
+ssize_t partitionWrite(struct PartitionFile *,PartitionEntry *,size_t);
+
+// This is the function partitionSeek
+off_t partitionSeek(struct PartitionFile, off_t, int);
 
 // This is to convert char into hex
 struct HexCharStruct {
@@ -167,7 +173,7 @@ int main () {
 
     PartitionFile * partitionFile = partitionOpen(vdiFileStruct,partitionEntry);
 
-    cout << hex((*partitionFile).table[0].type) << endl;
+    cout << (*partitionFile).table[0].type << endl;
 
     return 0;
 }
@@ -268,8 +274,6 @@ void partitionClose (struct PartitionFile *f) {
 }
 
 struct PartitionFile *partitionOpen(struct VDIFile * vdiFile, struct PartitionEntry partitionEntry) {
-    // Array which contains 4 entries
-//    PartitionEntry arrayOfEntries [4] = {partitionEntry, partitionEntry, partitionEntry, partitionEntry};
 
     // Pointer to the partitionFile structure
 	PartitionFile *ptr1 = new PartitionFile;
@@ -284,6 +288,42 @@ struct PartitionFile *partitionOpen(struct VDIFile * vdiFile, struct PartitionEn
 	// Return the pointer
 	return ptr1;
 }
+
+ssize_t partitionRead(struct PartitionFile *f, PartitionEntry *buf, size_t count) {
+    if (((*f).table[0].LBAStart * 512 < ((*f).vdiFile -> cursor)) && ((count + (*f).vdiFile -> cursor) < (*f).table[0].nSectors * 512) ||
+        ((*f).table[1].LBAStart * 512 < ((*f).vdiFile -> cursor)) && ((count + (*f).vdiFile -> cursor) < (*f).table[1].nSectors * 512) ||
+        ((*f).table[2].LBAStart * 512 < ((*f).vdiFile -> cursor)) && ((count + (*f).vdiFile -> cursor) < (*f).table[2].nSectors * 512) ||
+        ((*f).table[3].LBAStart * 512 < ((*f).vdiFile -> cursor)) && ((count + (*f).vdiFile -> cursor) < (*f).table[3].nSectors * 512)) {
+            return vdiRead(f -> vdiFile, buf, count);
+        } else {
+            return 0;
+        }
+}
+
+ssize_t partitionWrite(struct PartitionFile *f, PartitionEntry *buf, size_t count) {
+    if (((*f).table[0].LBAStart * 512 < ((*f).vdiFile -> cursor)) && ((count + (*f).vdiFile -> cursor) < (*f).table[0].nSectors * 512) ||
+        ((*f).table[1].LBAStart * 512 < ((*f).vdiFile -> cursor)) && ((count + (*f).vdiFile -> cursor) < (*f).table[1].nSectors * 512) ||
+        ((*f).table[2].LBAStart * 512 < ((*f).vdiFile -> cursor)) && ((count + (*f).vdiFile -> cursor) < (*f).table[2].nSectors * 512) ||
+        ((*f).table[3].LBAStart * 512 < ((*f).vdiFile -> cursor)) && ((count + (*f).vdiFile -> cursor) < (*f).table[3].nSectors * 512)) {
+            return vdiWrite(f -> vdiFile, buf, count);
+        } else {
+            return 0;
+        }
+}
+
+off_t partitionSeek(struct PartitionFile *f,off_t offset,int anchor) {
+    int cur = f -> vdiFile -> cursor;
+
+    // Place where the cursor may be moved to
+    int expectedLocation = vdiSeek((*f).vdiFile, offset + (*f).table[0].LBAStart, SEEK_SET);
+
+    // If the location given is invalid, move the cursor back to the original location
+    if (expectedLocation < ((*f).table[0].LBAStart * 512) ||
+        expectedLocation >= ((*f).table[0].LBAStart * 512) + ((*f).table[0].nSectors * 512)) {
+        f -> vdiFile -> cursor = cur;
+    }
+}
+
 
 void vdiClose(struct VDIFile *f) {
     // Close the file whose file handler is given
@@ -308,7 +348,7 @@ ssize_t vdiRead(struct VDIFile *f, PartitionEntry *buf, int counts) {
     return numOfBytesRead;
 }
 
-ssize_t vdiWrite(struct VDIFile *f, char *buf, int counts) {
+ssize_t vdiWrite(struct VDIFile *f, PartitionEntry *buf, int counts) {
     // Use lseek to seek the cursor to the location need to be read
     // The location to start writing is the current value of VDIFile cursor plus the data offset
     lseek((*f).fileDescriptor, (*f).cursor + (*f).header.offData, SEEK_SET);
