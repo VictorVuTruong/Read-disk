@@ -242,6 +242,12 @@ int main () {
     //cout << (*partitionFile).table[0].type << endl;
     printf("%d", (*partitionFile).table[0].nSectors);
 
+    Ext2File *ext2File = ext2Open("Test-fixed-4k.vdi", 1);
+
+    cout << endl;
+
+    printf("%d", (*ext2File).superBlocks.s_magic);
+
     return 0;
 }
 
@@ -306,25 +312,30 @@ struct VDIFile *vdiOpen (const char * fn) {
 	int fileIndex = open (fn, O_RDONLY);
 
     // Header structureTest-dynamic-1k.vdi
-    struct HeaderStructure header = {};
+    //struct HeaderStructure header = {};
+    struct VDIFile *vdiFileStruct = new VDIFile;
 
 	// Seek to a random location in the disk
 	lseek(fileIndex, 0, SEEK_CUR);
 
 	// Read the header into the header structure
-	read(fileIndex, &header, 400);
+	//read(fileIndex, &header, 400);
+	read(fileIndex, &(vdiFileStruct -> header), 400);
 
 	// VDIFile header
-	struct VDIFile vdiFileStruct = {fileIndex, header, 0};
+	//struct VDIFile vdiFileStruct = {fileIndex, header, 0};
 
 	// Pointer to the vdiFile structure
-	VDIFile *ptr;
+	//VDIFile *ptr;
 
+	vdiFileStruct -> fileDescriptor = fileIndex;
+	vdiFileStruct -> cursor = 0;
 	// Make the pointer points to the structure
-	ptr = &vdiFileStruct;
+	//ptr = &vdiFileStruct;
 
 	// Return the pointer to the structure
-	return ptr;
+	//return ptr;
+	return vdiFileStruct;
 }
 
 void partitionClose (struct PartitionFile *f) {
@@ -509,3 +520,4 @@ struct Ext2File *ext2Open(char *fn, int32_t pNum) {
     // Return the pointer
     return ptr;
 };
+
