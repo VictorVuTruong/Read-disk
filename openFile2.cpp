@@ -30,7 +30,7 @@ void vdiClose (struct VDIFile *);
 ssize_t vdiRead (struct VDIFile *, void *, int);
 
 // This is the vdiWrite function
-ssize_t vdiWrite (struct VDIFile *, struct PartitionEntry *, int);
+ssize_t vdiWrite (struct VDIFile *, void *, int);
 
 // This is the vdiSeek function
 off_t vdiSeek (VDIFile *, off_t, int);
@@ -42,13 +42,33 @@ void partitionClose(struct PartitionFile *);
 ssize_t partitionRead(struct PartitionFile *,void *, int);
 
 // This is the function partitionWrite
-ssize_t partitionWrite(struct PartitionFile *,struct PartitionEntry *,size_t);
+ssize_t partitionWrite(struct PartitionFile *,void *, size_t);
 
 // This is the function partitionSeek
 off_t partitionSeek(struct PartitionFile *, off_t, int);
 
 // This is the ext2Open function
 struct Ext2File *ext2Open(char *fn, int32_t pNum);
+
+void ext2Close (struct Ext2File *f);
+
+int32_t fetchBlock(struct Ext2File *,uint32_t, void *);
+
+int32_t writeBlock(struct Ext2File *,uint32_t , void *);
+
+int32_t fetchSuperblock(struct Ext2File *,uint32_t, struct Ext2Superblocks *);
+
+int32_t writeSuperblock(struct Ext2File *,uint32_t , struct Ext2Superblock *);
+
+void dumpSuperBlock(Ext2Superblock *);
+
+int32_t fetchBGDT(struct Ext2File *,uint32_t, struct Ext2BlockGroupDescriptor *);
+
+int32_t writeBGDT(struct Ext2File *,uint32_t, struct Ext2BlockGroupDescriptor *);
+
+int32_t fetchInode(struct Ext2File * ,uint32_t, struct Inode *);
+
+int32_t writeInode(struct Ext2File *,uint32_t, struct Inode *);
 
 // This is to convert char into hex
 struct HexCharStruct {
@@ -119,6 +139,31 @@ struct HeaderStructure {
     char uuidLinkage[16];
     /** Only for secondary images - UUID of previous image's last modification. */
     char uuidParentModify[16];
+};
+
+struct Inode {
+    uint16_t i_mode;
+    uint16_t i_uid;
+    uint32_t i_size;
+    uint32_t i_atime;
+    uint32_t i_ctime;
+    uint32_t i_mtime;
+    uint32_t i_dtime;
+    uint16_t i_gid;
+    uint16_t i_links_count;
+    uint32_t i_blocks;
+    uint32_t i_flags;
+    uint32_t i_osd1;
+    uint32_t i_block[15];
+    uint32_t i_generation;
+    uint32_t i_file_acl;
+    uint32_t i_sizeHigh;
+    uint32_t i_faddr;
+    uint16_t i_blocksHigh;
+    uint16_t reserved16;
+    uint16_t i_uidHigh;
+    uint16_t i_gidHigh;
+    uint32_t reserved32;
 };
 
 struct PartitionEntry {
@@ -242,16 +287,48 @@ struct Ext2File {
     Ext2BlockGroupDescriptor * blockGroupDescriptorstable;
 
     blocks blocks;
-
-    //number of groups = (blocks + blocks per group - 1) / 2
 };
 
 int main () {
     Ext2File *ext2File= ext2Open("Test-dynamic-1k.vdi",0);
 
-    cout << (*ext2File).superBlocks.s_inodes_count;
+    /**
+    cout << (*(ext2File -> blockGroupDescriptorstable + 15)).bg_block_bitmap << endl;
+
+    cout << (*ext2File).superBlocks.s_inodes_per_group;
+
+    Inode * inodePtr = new Inode;
+
+    fetchInode(ext2File, 11000, inodePtr);
 
     return 0;
+    */
+    // Group number where the desired inode is located
+    int group = (11000 - 1) / (*ext2File).superBlocks.s_inodes_per_group;
+
+    // Find the index inside the target group
+    int index = (11000 - 1) % (*ext2File).superBlocks.s_inodes_per_group;
+
+    // Find the number of inode per group
+    int numOfInodePerGroup = (*ext2File).superBlocks.s_inode_size / (*ext2File).superBlocks.s_log_block_size;
+
+    // Find the block number inside the group
+    int block = index / numOfInodePerGroup;
+
+    // Array of Inodes
+    //Inode * arrayOfInodes = new Inode[1024];
+    char arrayOfInodes [1024];
+
+    // Index of the desired inode inside the block
+    index = index % numOfInodePerGroup;
+
+    cout << "Block number to fetch " << (*(ext2File -> blockGroupDescriptorstable + group)).bg_inode_table + block << endl;
+    cout << "Number of inodes per group " << numOfInodePerGroup;
+
+    // Fetch one block
+    fetchBlock(ext2File, 8192, arrayOfInodes);
+
+    //printf("%x", arrayOfInodes[index]);
 }
 
 void displayBufferPage (uint8_t *buffer, uint32_t count, uint32_t start, uint64_t offset) {
@@ -341,7 +418,7 @@ ssize_t vdiRead(struct VDIFile *f, void *buf, int counts) {
     return numOfBytesRead;
 }
 
-ssize_t vdiWrite(struct VDIFile *f, PartitionEntry *buf, int counts) {
+ssize_t vdiWrite(struct VDIFile *f, void *buf, int counts) {
     // Use lseek to seek the cursor to the location need to be read
     // The location to start writing is the current value of VDIFile cursor plus the data offset
     lseek(f -> fileDescriptor, f -> cursor, SEEK_SET);
@@ -406,19 +483,7 @@ struct PartitionFile *partitionOpen(struct VDIFile * vdiFile, struct PartitionEn
 	PartitionFile *ptr2 = new PartitionFile;
     ptr2->vdiFile = vdiFile;
     ptr2->partitionEntry = partitionEntry;
-    /**
-    // Use vdiSeek to seek to the location of the partition table
-    vdiSeek(vdiFile, 446, SEEK_SET);
 
-    // Use vdiRead to read the data of the partition table into the array of entries
-    vdiRead(vdiFile, ptr1->table, 64);
-
-    // User vdiSeek again to go to the location of the given partition
-    vdiSeek(vdiFile, 446 + (partitionNumber - 1) * 16, SEEK_SET);
-
-    // Use vdiRead again to read the data of the selected partition into the partitionEntry of the PartitionFile structure
-    vdiRead(vdiFile, &(ptr2->partitionEntry), 16);
-    */
 	// Return the pointer
 	return ptr2;
 }
@@ -435,7 +500,7 @@ ssize_t partitionRead(struct PartitionFile *f, void *buf, int counts) {
     }
 }
 
-ssize_t partitionWrite(struct PartitionFile *f, PartitionEntry *buf, size_t count) {
+ssize_t partitionWrite(struct PartitionFile *f, void *buf, size_t count) {
     if (((*f).partitionEntry.LBAStart < ((*f).vdiFile -> cursor)) && ((count + (*f).vdiFile -> cursor) < (*f).partitionEntry.nSectors)) {
             return vdiWrite(f -> vdiFile, buf, count);
         } else {
@@ -509,3 +574,180 @@ struct Ext2File *ext2Open(char *fn, int pNum) {
     return ptr;
 };
 
+void ext2Close (struct Ext2File *f){
+    delete(f);
+}
+
+
+int32_t fetchBlock(struct Ext2File *f,uint32_t blockNum, void *buf){
+    //seek to the block whose block number is given
+    partitionSeek(&f->partitionFile,blockNum*f->superBlocks.s_log_block_size ,SEEK_SET);
+    //read that entire block into the buffer
+    int32_t readSuccess = partitionRead(&f->partitionFile,buf, f->superBlocks.s_log_block_size);
+
+    if (readSuccess==0){
+        cout << "Fetched the given block" <<endl;
+        return 0;
+    }else{
+        cout <<" Failure to fetch the block" << endl;
+        return -1;
+    }
+
+
+}
+
+int32_t writeBlock(struct Ext2File *ext2File, uint32_t blockNum, void *buf){
+    partitionSeek(&ext2File->partitionFile, (blockNum * (*ext2File).superBlocks.s_log_block_size), SEEK_SET);
+
+    int result = partitionWrite(&ext2File->partitionFile, buf, ext2File->superBlocks.s_log_block_size);
+
+    if(result != 0){
+        cout << "Fail to fetch!" << endl;
+        return -1;
+    }
+
+    return result;
+}
+
+int32_t fetchSuperblock(struct Ext2File *ext2File,uint32_t blockNum, struct Ext2Superblocks *ext2SuperBlock){
+    //find the group in which the given block is contained.
+
+    int result = round(blockNum / ext2File->superBlocks.s_blocks_per_group);
+
+    if (result != 0){
+        //create a buffer of the size of a block in the partition
+        void *ptr = malloc(ext2File->superBlocks.s_log_block_size);
+
+        int blockCount = result * ext2File->superBlocks.s_blocks_per_group;
+
+        fetchBlock(ext2File, blockCount, ptr);
+
+        //cout << ext2SuperBlock->s_log_block_size << endl;
+        memcpy(ext2SuperBlock,ptr,1024);
+        //cout << ext2SuperBlock->s_log_block_size << endl;
+
+
+        (ext2SuperBlock->s_log_block_size) = 1024 * pow(2,ext2SuperBlock->s_log_block_size);
+
+    }
+    //else if accessing the copies of super block in other blocks,
+    // find the position where the superblock begins based on the number of block groups before that superblock
+    else{
+        //seek to the end of the block before superblock
+        partitionSeek(&ext2File->partitionFile,ext2File->superBlocks.s_first_data_block *ext2File->superBlocks.s_log_block_size,SEEK_SET);
+
+        //read 1024 bytes from there into the passed superblock
+        partitionRead(&ext2File->partitionFile,ext2SuperBlock,1024);
+        (ext2SuperBlock->s_log_block_size) = 1024 * pow(2,ext2SuperBlock->s_log_block_size);
+
+    }
+    cout << "The superblock has been fetched from the block group of the given block." << endl;
+    return 0;
+}
+int32_t writeSuperblock(struct Ext2File *ext2File,uint32_t blockNum, struct Ext2Superblocks *ext2Superblock){
+    int result = blockNum / ext2File->superBlocks.s_blocks_per_group;
+
+    if(result != 0){
+        int blockCount = result * ext2File->superBlocks.s_blocks_per_group;
+
+        void *ptr = malloc(ext2File->superBlocks.s_blocks_per_group);
+        writeBlock(ext2File, result, ptr);
+
+        memcpy(ext2File, ptr, 1024);
+
+    } else {
+        partitionSeek(&ext2File->partitionFile, (*ext2File).superBlocks.s_log_block_size, SEEK_SET);
+        partitionWrite(&ext2File->partitionFile, ext2Superblock, 1024);
+        (ext2Superblock->s_log_block_size) = 1024 * pow(2,ext2Superblock->s_log_block_size);
+    }
+}
+
+
+int32_t fetchBGDT(struct Ext2File *ext2File, uint32_t blockNum, Ext2BlockGroupDescriptor *bgdt) {
+
+    int groupNumber = round(blockNum/ ext2File->superBlocks.s_blocks_per_group);
+
+    bgdt->bg_inode_bitmap = ext2File->blockGroupDescriptorstable[groupNumber].bg_inode_bitmap;
+    bgdt->bg_block_bitmap = ext2File->blockGroupDescriptorstable[groupNumber].bg_block_bitmap;
+    bgdt->bg_free_blocks_count = ext2File->blockGroupDescriptorstable[groupNumber].bg_free_blocks_count;
+    bgdt->bg_free_inodes_count = ext2File->blockGroupDescriptorstable[groupNumber].bg_free_inodes_count;
+    bgdt->bg_used_dirs_count = ext2File->blockGroupDescriptorstable[groupNumber].bg_used_dirs_count;
+    bgdt->bg_pad = ext2File->blockGroupDescriptorstable[groupNumber].bg_pad;
+    bgdt->bg_inode_table = ext2File->blockGroupDescriptorstable[groupNumber].bg_inode_table;
+
+    for (int i = 1; i <3 ; ++i) {
+        bgdt->bg_reserved[i] = ext2File->blockGroupDescriptorstable[groupNumber].bg_pad;
+    }
+
+    return 0;
+}
+
+int32_t writeBGDT(struct Ext2File *ext2File,uint32_t blockNum,Ext2BlockGroupDescriptor *bgdt) {
+
+    int groupNumber = round(blockNum/ ext2File->superBlocks.s_blocks_per_group);
+
+    ext2File->blockGroupDescriptorstable[groupNumber].bg_inode_bitmap = bgdt->bg_inode_bitmap;
+    ext2File->blockGroupDescriptorstable[groupNumber].bg_block_bitmap = bgdt->bg_block_bitmap;
+    ext2File->blockGroupDescriptorstable[groupNumber].bg_free_blocks_count = bgdt->bg_free_blocks_count;
+    ext2File->blockGroupDescriptorstable[groupNumber].bg_free_inodes_count = bgdt->bg_free_inodes_count;
+    ext2File->blockGroupDescriptorstable[groupNumber].bg_used_dirs_count = bgdt->bg_used_dirs_count;
+    ext2File->blockGroupDescriptorstable[groupNumber].bg_pad = bgdt->bg_pad;
+    ext2File->blockGroupDescriptorstable[groupNumber].bg_inode_table = bgdt->bg_inode_table;
+
+    for (int i = 0; i <3 ; ++i) {
+         ext2File->blockGroupDescriptorstable[groupNumber].bg_pad = bgdt->bg_reserved[i];
+    }
+
+    return 0;
+}
+
+int32_t fetchInode(struct Ext2File *ext2File, uint32_t iNum, struct Inode *buf) {
+
+    // Group number where the desired inode is located
+    int group = (iNum - 1) / (*ext2File).superBlocks.s_inodes_per_group;
+
+    // Find the index inside the target group
+    int index = (iNum - 1) % (*ext2File).superBlocks.s_inodes_per_group;
+
+    // Find the number of inode per group
+    int numOfInodePerGroup = (*ext2File).superBlocks.s_log_block_size / (*ext2File).superBlocks.s_inode_size;
+
+    // Find the block number inside the group
+    int block = index / numOfInodePerGroup;
+
+    // Array of Inodes
+    Inode * arrayOfInodes = new Inode[numOfInodePerGroup];
+
+    // Index of the desired inode inside the block
+    index = index % numOfInodePerGroup;
+
+    // Fetch one block
+    fetchBlock(ext2File, (*(ext2File -> blockGroupDescriptorstable + group)).bg_inode_table + block, arrayOfInodes);
+
+    cout << arrayOfInodes[index].i_mode;
+}
+
+int32_t writeInode(struct Ext2File *f,uint32_t iNum, struct Inode *buf) {
+    // Group number where the desired inode is located
+    int group = (iNum - 1) / (*ext2File).superBlocks.s_inodes_per_group;
+
+    // Find the index inside the target group
+    int index = (iNum - 1) % (*ext2File).superBlocks.s_inodes_per_group;
+
+    // Find the number of inode per group
+    int numOfInodePerGroup = (*ext2File).superBlocks.s_log_block_size / (*ext2File).superBlocks.s_inode_size;
+
+    // Find the block number inside the group
+    int block = index / numOfInodePerGroup;
+
+    // Array of Inodes
+    Inode * arrayOfInodes = new Inode[numOfInodePerGroup];
+
+    // Index of the desired inode inside the block
+    index = index % numOfInodePerGroup;
+
+    // Fetch one block
+    fetchBlock(ext2File, (*(ext2File -> blockGroupDescriptorstable + group)).bg_inode_table + block, arrayOfInodes);
+
+    cout << arrayOfInodes[index].i_mode;
+}
