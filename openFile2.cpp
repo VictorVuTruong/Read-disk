@@ -75,13 +75,17 @@ void dumpSuperBlock(Ext2Superblocks *);
 
 int32_t fetchInode(struct Ext2File * ,uint32_t, struct Inode *);
 
-int32_t writeInode(struct Ext2File *,uint32_t, struct Inode *);
+int32_t writeInode(struct Ext2File *,uint32_t, void *);
 
 int32_t inodeInUse(struct Ext2File *,uint32_t);
 
 int32_t freeInode(struct Ext2File * ,uint32_t);
 
 uint32_t allocateInode(struct Ext2File *,int32_t);
+
+int32_t fetchBlockFromFile(struct Ext2File *, struct Inode *, uint32_t, void *);
+
+int32_t writeBlockToFile(struct Ext2File *, struct Inode *, uint32_t, void *, uint32_t);
 
 // Structures declaration
 
@@ -781,7 +785,7 @@ int32_t fetchInode(struct Ext2File *ext2File, uint32_t iNum, struct Inode *buf) 
     return index;
 }
 
-int32_t writeInode(struct Ext2File *ext2File,uint32_t iNum, struct Inode *buf) {
+int32_t writeInode(struct Ext2File *ext2File,uint32_t iNum, void *buf) {
     // Group number where the desired inode is located
     int group = (iNum -  1) / (*ext2File).superBlocks.s_inodes_per_group;
 
@@ -919,5 +923,270 @@ int32_t freeInode(struct Ext2File *ext2File, uint32_t iNum) {
 
     // Write the array with manipulated bitmap back to the group
     writeBlock(ext2File, bitmapPostition, bitmap);
+}
+
+int32_t fetchBlockFromFile(struct Ext2File *ext2File, struct Inode *inode, uint32_t bNum, void *buf) {
+    // Pointer which will be used to point to the blockList
+    void * blockListPointer;
+
+    // Adjusted block number
+    int adjustedBlockNumber;
+
+    int index;
+
+    // Find the number k
+    int k = 1024 / 4;
+
+    if (bNum < 12) {
+        // Make the blockList pointer points to the i_block
+        blockListPointer = inode -> i_block;
+
+        // Goto direct
+        goto direct;
+    } else if (bNum < 12 + k) {
+        if (*(uint32_t*)(inode -> i_block + 12) == 0) {
+            return false;
+        }
+
+        // Fetch the SIB block
+        fetchBlock(ext2File, *(uint32_t*)(inode -> i_block + 12), buf);
+
+        // Set up an array to read from
+        blockListPointer = buf;
+
+        // Adjust block number for nodes skipped over
+        adjustedBlockNumber = bNum - 12;
+
+        // Goto direct
+        goto direct;
+    } else if (bNum < 12 + k + k*k) {
+        if (*(uint32_t*)(inode -> i_block + 13) == 0) {
+            return false;
+        }
+
+        // Fetch the SIB block
+        fetchBlock(ext2File, *(uint32_t*)(inode -> i_block + 13), buf);
+
+        // Set up an array to read from
+        blockListPointer = buf;
+
+        // Adjust block number for nodes skipped over
+        adjustedBlockNumber = bNum - 12;
+
+        // Goto single
+        goto single;
+    } else {
+        if (*(uint32_t*)(inode -> i_block + 14) == 0) {
+            return false;
+        }
+
+        // Fetch the SIB block
+        fetchBlock(ext2File, *(uint32_t*)(inode -> i_block + 14), buf);
+
+        // Set up an array to read from
+        blockListPointer = buf;
+
+        // Adjust block number for nodes skipped over
+        adjustedBlockNumber = bNum - 12 - k - (k*k);
+    }
+
+    // Determine which DIB to fetch
+    index = adjustedBlockNumber / (k*k);
+
+    // Determine which block under that DIB we want
+    adjustedBlockNumber = adjustedBlockNumber % (k*k);
+
+    if (*(uint32_t*)(blockListPointer + index) == 0) {
+        return false;
+    }
+
+    // Fetch the DIB and point to it
+    fetchBlock(ext2File, *(uint32_t*)(blockListPointer + index), buf);
+    blockListPointer = buf;
+
+    // Single label
+    // Give a DIB, fetch a proper SIB
+    single: {
+        // Determine which SIB to fetch
+        index = adjustedBlockNumber / k;
+
+        // Determine which block under that SIB we want
+        adjustedBlockNumber = adjustedBlockNumber % k;
+
+        if (*(uint32_t*)(blockListPointer + index) == 0) {
+            return false;
+        }
+
+        // Fetch the DIB and point to it
+        fetchBlock(ext2File, adjustedBlockNumber, buf);
+        blockListPointer = buf;
+    }
+
+    // Direct label
+    direct: {
+        if (*(uint32_t*)(blockListPointer + adjustedBlockNumber) == 0) {
+            return false;
+        }
+
+        // Fetch the data block
+        fetchBlock(ext2File, *(uint32_t*)(blockListPointer + adjustedBlockNumber), buf);
+    }
+
+    return true;
+}
+
+int32_t writeBlockToFile(struct Ext2File *ext2File, struct Inode *inode, uint32_t bNum, void *buf, uint32_t iNum) {
+    // Find the number k
+    int k = 1024 / 4;
+
+    // Adjusted block number
+    int adjustedBlockNumber;
+
+    // Figure out the block group that the iNum inode is located
+    int blockGroupToAllocate = (iNum -  1) / (*ext2File).superBlocks.s_inodes_per_group;
+
+    // A temporary block that you must allocate
+    void * tmp;
+
+    // Pointer which will be used to point to the blockList
+    void * blockListPointer;
+
+    int ibNum;
+    int index;
+
+    if (bNum < 12) {
+        // If block not there, allocate it
+        if (*(uint32_t*)(inode -> i_block + bNum) == 0) {
+            // Allocate
+            allocateInode(ext2File, blockGroupToAllocate);
+
+            // Write the inode
+            writeInode(ext2File, iNum, buf);
+        }
+
+        // Set up the array to read from
+        blockListPointer = inode -> i_block;
+
+        // Goto direct
+        goto direct;
+    } else if (bNum < 12 + k) {
+        // If block not there, allocate it
+        if (*(uint32_t*)(inode -> i_block + 12) == 0) {
+            // Allocate
+            allocateInode(ext2File, blockGroupToAllocate);
+
+            // Write the inode
+            writeInode(ext2File, iNum, buf);
+        }
+
+        // Fetch SIB
+        fetchBlock(ext2File, *(uint32_t*)(inode -> i_block + 12), tmp);
+
+        // Set up the array to read from
+        ibNum = *(uint32_t*)(inode -> i_block + 12);
+        blockListPointer = tmp;
+
+        // Adjust b for nodes skipped over
+        adjustedBlockNumber = bNum - 12;
+
+        // Goto direct
+        goto direct;
+    } else if (bNum < 12 + k + (k*k)) {
+        if (*(uint32_t*)(inode -> i_block + 13) == 0) {
+            // Allocate
+            allocateInode(ext2File, blockGroupToAllocate);
+
+            // Write the inode
+            writeInode(ext2File, iNum, buf);
+        }
+
+        // Fetch SIB
+        fetchBlock(ext2File, *(uint32_t*)(inode -> i_block + 13), tmp);
+
+        // Set up the array to read from
+        ibNum = *(uint32_t*)(inode -> i_block + 13);
+        blockListPointer = tmp;
+
+        // Adjust b for nodes skipped over
+        adjustedBlockNumber = bNum - 12 - k;
+
+        // Goto single
+        goto single;
+    } else {
+        if (*(uint32_t*)(inode -> i_block + 14) == 0) {
+            // Allocate
+            allocateInode(ext2File, blockGroupToAllocate);
+
+            // Write the inode
+            writeInode(ext2File, iNum, buf);
+        }
+
+        // Fetch SIB
+        fetchBlock(ext2File, *(uint32_t*)(inode -> i_block + 14), tmp);
+
+        // Set up the array to read from
+        ibNum = *(uint32_t*)(inode -> i_block + 14);
+        blockListPointer = tmp;
+
+        // Adjust b for nodes skipped over
+        adjustedBlockNumber = bNum - 12 - k - (k*k);
+    }
+
+    // Determine which DIB to fetch
+    index = adjustedBlockNumber / (k*k);
+
+    // Determine which block under that DIB we want
+    adjustedBlockNumber = adjustedBlockNumber % (k*k);
+
+    if (*(uint32_t*)(blockListPointer + index) == 0) {
+        if (*(uint32_t*)(blockListPointer + 14) == 0) {
+            // Allocate
+            allocateInode(ext2File, blockGroupToAllocate);
+
+            // Write the inode
+            writeInode(ext2File, iNum, buf);
+        }
+    }
+
+    // Fetch the DIB and point to it
+    ibNum = *(uint32_t*)(blockListPointer + index);
+    fetchBlock(ext2File, *(uint32_t*)(blockListPointer + index), tmp);
+    blockListPointer = tmp;
+
+    // Single label
+    single: {
+        // Determine which SIB to fetch
+        index = adjustedBlockNumber / k;
+
+        // Determine which block under that SIB we want
+        adjustedBlockNumber = adjustedBlockNumber % k;
+
+        if (*(uint32_t*)(blockListPointer + index) == 0) {
+            // Allocate
+            allocateInode(ext2File, blockGroupToAllocate);
+
+            // Write the inode
+            writeInode(ext2File, iNum, buf);
+        }
+
+        // Fetch the SIB and point to it
+        ibNum = *(uint32_t*)(blockListPointer + index);
+        fetchBlock(ext2File, *(uint32_t*)(blockListPointer + index), tmp);
+        blockListPointer = tmp;
+    }
+
+    // Direct label
+    direct: {
+        if (*(uint32_t*)(blockListPointer + index) == 0) {
+            // Allocate
+            allocateInode(ext2File, blockGroupToAllocate);
+
+            // Write the inode
+            writeInode(ext2File, iNum, buf);
+        }
+
+        // Write the data block
+        writeBlock(ext2File, *(uint32_t*)(blockListPointer + bNum), buf);
+    }
 }
 
