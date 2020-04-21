@@ -223,22 +223,22 @@ struct Ext2Superblocks {
     uint32_t s_feature_compat;
     uint32_t s_feature_incompat;
     uint32_t s_feature_ro_compat;
-    char        s_uuid[16];
+    char s_uuid[16];
     char s_volume_name[16];
-    char        s_last_mounted[64];
+    char s_last_mounted[64];
     uint32_t s_algo_bitmap;
     unsigned char s_prealloc_blocks;
     unsigned char_prealloc_dir_blocks;
     unsigned short s_padding_1;
-    unsigned  char s_journal_uuid[16];
+    unsigned char s_journal_uuid[16];
     uint32_t s_journal_inum;
-    uint32_t        s_journal_dev;
+    uint32_t s_journal_dev;
     uint32_t s_last_orphan;
-    uint32_t        s_hash_seed[4];
+    uint32_t s_hash_seed[4];
     uint8_t s_def_hash_version;
     unsigned char s_reserved_char_pad;
     unsigned short s_reserved_word_pad;
-    uint32_t        s_default_mount_options;
+    uint32_t s_default_mount_options;
     uint32_t s_first_meta_bg;
     unsigned int s_reserved[190];
 };
@@ -260,7 +260,7 @@ struct Inode {
         i_blocks,
         i_flags,
         i_osd1,
-         i_block[15],
+        i_block[15],
         i_generation,
         i_file_acl,
         i_sizeHigh,
