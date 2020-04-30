@@ -87,6 +87,14 @@ int32_t fetchBlockFromFile(struct Ext2File *, struct Inode *, uint32_t, void *);
 
 int32_t writeBlockToFile(struct Ext2File *, struct Inode *, uint32_t, void *, uint32_t);
 
+bool getNextDirent(struct Ext2File *, struct Directory *, uint32_t &, char *);
+
+struct Directory *openDir(struct Ext2File *, uint32_t);
+
+void rewindDir(struct Directory *);
+
+void closeDir(struct Directory *);
+
 // Structures declaration
 
 struct HeaderStructure {
@@ -243,6 +251,14 @@ struct Ext2Superblocks {
     unsigned int s_reserved[190];
 };
 
+struct Dirent {
+    uint32_t iNum;
+    uint16_t recLen;
+    uint8_t nameLen;
+    uint8_t fileType;
+    uint8_t name[1];
+};
+
 struct Inode {
     uint16_t
         i_mode,
@@ -272,6 +288,15 @@ struct Inode {
         i_gidHigh;
     uint32_t
     reserved32;
+};
+
+struct Directory {
+    uint32_t * cursor;
+    void * block;
+    uint32_t iNodeNum;
+    Inode * iNode;
+    uint8_t * pointer;
+    Dirent * dirent;
 };
 
 //Initializing I/O functions for Ext2File access
@@ -1186,5 +1211,65 @@ int32_t writeBlockToFile(struct Ext2File *ext2File, struct Inode *inode, uint32_
         // Write the data block
         writeBlock(ext2File, *(uint32_t*)(blockListPointer + bNum), buf);
     }
+}
+
+struct Directory *openDir(struct Ext2File * ext2File, uint32_t iNum) {
+    // create new directory pointer
+    Directory *directory = new Directory;
+
+    // Populate the Directory structure with information
+    fetchInode(ext2File, iNum, directory -> iNode);
+    directory -> iNodeNum = iNum;
+    directory -> block = new char[(*ext2File).superBlocks.s_log_block_size];
+
+    // Return the pointer to the directory
+    return directory;
+}
+
+bool getNextDirent(struct Ext2File * ext2File, struct Directory * directory, uint32_t &iNum, char *name) {
+    // Block number
+    int bNum;
+
+    // Offset
+    int offset;
+
+    while (*(directory -> cursor) < (*(directory -> iNode)).i_size) {
+        // Get the block number
+        bNum = *(directory -> cursor) / (*ext2File).superBlocks.s_log_block_size;
+
+        // Get the offset
+        offset = *(directory -> cursor) % (*ext2File).superBlocks.s_log_block_size;
+
+        // Fetch that block from file
+        fetchBlockFromFile(ext2File, directory -> iNode, bNum, directory -> block);
+
+        // Set up information for the directory structure
+        directory -> dirent = (Dirent*)(directory -> block + offset);
+        directory -> cursor += directory -> dirent -> recLen;
+
+        if ((*(directory -> dirent)).iNum != 0) {
+            iNum = (*(directory -> dirent)).iNum;
+
+            for (int i = 0; i < (*(directory -> dirent)).nameLen; i++) {
+                name[i] = directory -> dirent -> name[i];
+            }
+
+            name[(*(directory -> dirent)).nameLen] = 0;
+            return true;
+        }
+    }
+
+    return false;
+}
+
+void rewindDir(struct Directory * directory) {
+    // Reset the directory cursor to 0
+    directory -> cursor = 0;
+}
+
+void closeDir(struct Directory * directory) {
+    // Close the directory and deallocate the directory pointer
+    delete[] directory -> block;
+    delete directory;
 }
 
