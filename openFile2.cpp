@@ -223,22 +223,22 @@ struct Ext2Superblocks {
     uint32_t s_feature_compat;
     uint32_t s_feature_incompat;
     uint32_t s_feature_ro_compat;
-    char s_uuid[16];
+    char        s_uuid[16];
     char s_volume_name[16];
-    char s_last_mounted[64];
+    char        s_last_mounted[64];
     uint32_t s_algo_bitmap;
     unsigned char s_prealloc_blocks;
     unsigned char_prealloc_dir_blocks;
     unsigned short s_padding_1;
-    unsigned char s_journal_uuid[16];
+    unsigned  char s_journal_uuid[16];
     uint32_t s_journal_inum;
-    uint32_t s_journal_dev;
+    uint32_t        s_journal_dev;
     uint32_t s_last_orphan;
-    uint32_t s_hash_seed[4];
+    uint32_t        s_hash_seed[4];
     uint8_t s_def_hash_version;
     unsigned char s_reserved_char_pad;
     unsigned short s_reserved_word_pad;
-    uint32_t s_default_mount_options;
+    uint32_t        s_default_mount_options;
     uint32_t s_first_meta_bg;
     unsigned int s_reserved[190];
 };
@@ -260,7 +260,7 @@ struct Inode {
         i_blocks,
         i_flags,
         i_osd1,
-        i_block[15],
+         i_block[15],
         i_generation,
         i_file_acl,
         i_sizeHigh,
@@ -930,7 +930,7 @@ int32_t fetchBlockFromFile(struct Ext2File *ext2File, struct Inode *inode, uint3
     void * blockListPointer;
 
     // Adjusted block number
-    int adjustedBlockNumber;
+    //int adjustedBlockNumber;
 
     int index;
 
@@ -955,7 +955,7 @@ int32_t fetchBlockFromFile(struct Ext2File *ext2File, struct Inode *inode, uint3
         blockListPointer = buf;
 
         // Adjust block number for nodes skipped over
-        adjustedBlockNumber = bNum - 12;
+        bNum = bNum - 12;
 
         // Goto direct
         goto direct;
@@ -964,14 +964,14 @@ int32_t fetchBlockFromFile(struct Ext2File *ext2File, struct Inode *inode, uint3
             return false;
         }
 
-        // Fetch the SIB block
+        // Fetch the DIB block
         fetchBlock(ext2File, *(uint32_t*)(inode -> i_block + 13), buf);
 
         // Set up an array to read from
         blockListPointer = buf;
 
         // Adjust block number for nodes skipped over
-        adjustedBlockNumber = bNum - 12;
+        bNum = bNum - 12 - k;
 
         // Goto single
         goto single;
@@ -980,21 +980,21 @@ int32_t fetchBlockFromFile(struct Ext2File *ext2File, struct Inode *inode, uint3
             return false;
         }
 
-        // Fetch the SIB block
+        // Fetch the TIB block
         fetchBlock(ext2File, *(uint32_t*)(inode -> i_block + 14), buf);
 
         // Set up an array to read from
         blockListPointer = buf;
 
         // Adjust block number for nodes skipped over
-        adjustedBlockNumber = bNum - 12 - k - (k*k);
+        bNum = bNum - 12 - k - (k*k);
     }
 
     // Determine which DIB to fetch
-    index = adjustedBlockNumber / (k*k);
+    index = bNum / (k*k);
 
     // Determine which block under that DIB we want
-    adjustedBlockNumber = adjustedBlockNumber % (k*k);
+    bNum = bNum % (k*k);
 
     if (*(uint32_t*)(blockListPointer + index) == 0) {
         return false;
@@ -1008,28 +1008,28 @@ int32_t fetchBlockFromFile(struct Ext2File *ext2File, struct Inode *inode, uint3
     // Give a DIB, fetch a proper SIB
     single: {
         // Determine which SIB to fetch
-        index = adjustedBlockNumber / k;
+        index = bNum / k;
 
         // Determine which block under that SIB we want
-        adjustedBlockNumber = adjustedBlockNumber % k;
+        bNum = bNum % k;
 
         if (*(uint32_t*)(blockListPointer + index) == 0) {
             return false;
         }
 
         // Fetch the DIB and point to it
-        fetchBlock(ext2File, adjustedBlockNumber, buf);
+        fetchBlock(ext2File, *(uint32_t*)(blockListPointer + index), buf);
         blockListPointer = buf;
     }
 
     // Direct label
     direct: {
-        if (*(uint32_t*)(blockListPointer + adjustedBlockNumber) == 0) {
+        if (*(uint32_t*)(blockListPointer + bNum) == 0) {
             return false;
         }
 
         // Fetch the data block
-        fetchBlock(ext2File, *(uint32_t*)(blockListPointer + adjustedBlockNumber), buf);
+        fetchBlock(ext2File, *(uint32_t*)(blockListPointer + bNum), buf);
     }
 
     return true;
@@ -1040,7 +1040,7 @@ int32_t writeBlockToFile(struct Ext2File *ext2File, struct Inode *inode, uint32_
     int k = 1024 / 4;
 
     // Adjusted block number
-    int adjustedBlockNumber;
+    //int adjustedBlockNumber;
 
     // Figure out the block group that the iNum inode is located
     int blockGroupToAllocate = (iNum -  1) / (*ext2File).superBlocks.s_inodes_per_group;
@@ -1061,7 +1061,7 @@ int32_t writeBlockToFile(struct Ext2File *ext2File, struct Inode *inode, uint32_
             allocateInode(ext2File, blockGroupToAllocate);
 
             // Write the inode
-            writeInode(ext2File, iNum, buf);
+            writeInode(ext2File, iNum, inode);
         }
 
         // Set up the array to read from
@@ -1076,7 +1076,7 @@ int32_t writeBlockToFile(struct Ext2File *ext2File, struct Inode *inode, uint32_
             allocateInode(ext2File, blockGroupToAllocate);
 
             // Write the inode
-            writeInode(ext2File, iNum, buf);
+            writeInode(ext2File, iNum, inode);
         }
 
         // Fetch SIB
@@ -1087,7 +1087,7 @@ int32_t writeBlockToFile(struct Ext2File *ext2File, struct Inode *inode, uint32_
         blockListPointer = tmp;
 
         // Adjust b for nodes skipped over
-        adjustedBlockNumber = bNum - 12;
+        bNum = bNum - 12;
 
         // Goto direct
         goto direct;
@@ -1097,10 +1097,10 @@ int32_t writeBlockToFile(struct Ext2File *ext2File, struct Inode *inode, uint32_
             allocateInode(ext2File, blockGroupToAllocate);
 
             // Write the inode
-            writeInode(ext2File, iNum, buf);
+            writeInode(ext2File, iNum, inode);
         }
 
-        // Fetch SIB
+        // Fetch DIB
         fetchBlock(ext2File, *(uint32_t*)(inode -> i_block + 13), tmp);
 
         // Set up the array to read from
@@ -1108,7 +1108,7 @@ int32_t writeBlockToFile(struct Ext2File *ext2File, struct Inode *inode, uint32_
         blockListPointer = tmp;
 
         // Adjust b for nodes skipped over
-        adjustedBlockNumber = bNum - 12 - k;
+        bNum = bNum - 12 - k;
 
         // Goto single
         goto single;
@@ -1118,10 +1118,10 @@ int32_t writeBlockToFile(struct Ext2File *ext2File, struct Inode *inode, uint32_
             allocateInode(ext2File, blockGroupToAllocate);
 
             // Write the inode
-            writeInode(ext2File, iNum, buf);
+            writeInode(ext2File, iNum, inode);
         }
 
-        // Fetch SIB
+        // Fetch TIB
         fetchBlock(ext2File, *(uint32_t*)(inode -> i_block + 14), tmp);
 
         // Set up the array to read from
@@ -1129,23 +1129,21 @@ int32_t writeBlockToFile(struct Ext2File *ext2File, struct Inode *inode, uint32_
         blockListPointer = tmp;
 
         // Adjust b for nodes skipped over
-        adjustedBlockNumber = bNum - 12 - k - (k*k);
+        bNum = bNum - 12 - k - (k*k);
     }
 
     // Determine which DIB to fetch
-    index = adjustedBlockNumber / (k*k);
+    index = bNum / (k*k);
 
     // Determine which block under that DIB we want
-    adjustedBlockNumber = adjustedBlockNumber % (k*k);
+    bNum = bNum % (k*k);
 
     if (*(uint32_t*)(blockListPointer + index) == 0) {
-        if (*(uint32_t*)(blockListPointer + 14) == 0) {
-            // Allocate
-            allocateInode(ext2File, blockGroupToAllocate);
+        // Allocate
+        allocateInode(ext2File, blockGroupToAllocate);
 
-            // Write the inode
-            writeInode(ext2File, iNum, buf);
-        }
+        // Write the inode
+        writeInode(ext2File, iNum, inode);
     }
 
     // Fetch the DIB and point to it
@@ -1156,17 +1154,17 @@ int32_t writeBlockToFile(struct Ext2File *ext2File, struct Inode *inode, uint32_
     // Single label
     single: {
         // Determine which SIB to fetch
-        index = adjustedBlockNumber / k;
+        index = bNum / k;
 
         // Determine which block under that SIB we want
-        adjustedBlockNumber = adjustedBlockNumber % k;
+        bNum = bNum % k;
 
         if (*(uint32_t*)(blockListPointer + index) == 0) {
             // Allocate
             allocateInode(ext2File, blockGroupToAllocate);
 
             // Write the inode
-            writeInode(ext2File, iNum, buf);
+            writeInode(ext2File, ibNum, blockListPointer);
         }
 
         // Fetch the SIB and point to it
@@ -1177,12 +1175,12 @@ int32_t writeBlockToFile(struct Ext2File *ext2File, struct Inode *inode, uint32_
 
     // Direct label
     direct: {
-        if (*(uint32_t*)(blockListPointer + index) == 0) {
+        if (*(uint32_t*)(blockListPointer + bNum) == 0) {
             // Allocate
-            allocateInode(ext2File, blockGroupToAllocate);
+            allocateInode(ext2File, bNum);
 
             // Write the inode
-            writeInode(ext2File, iNum, buf);
+            writeInode(ext2File, ibNum, blockListPointer);
         }
 
         // Write the data block
