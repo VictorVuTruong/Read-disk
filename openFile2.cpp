@@ -95,6 +95,10 @@ void rewindDir(struct Directory *);
 
 void closeDir(struct Directory *);
 
+int locateBlock(struct Ext2File *, int);
+
+uint32_t traversePath(Ext2File *, char *);
+
 // Structures declaration
 
 struct HeaderStructure {
@@ -377,6 +381,11 @@ void displayBuffer(uint8_t *buffer, uint32_t count, uint64_t offset){
 			displayBufferPage(buffer, 256-originalCount, 0, currentOffset);
 		}
 	}
+}
+
+// get the VDI file's byte location of the desired block number
+int locateBlock(Ext2File * ext2File, int blockNum) {
+    return (blockNum * (*ext2File).superBlocks.s_log_block_size) + ((*ext2File).superBlocks.s_first_data_block * (*ext2File).superBlocks.s_log_block_size);
 }
 
 struct VDIFile *vdiOpen (const char * fn) {
@@ -773,41 +782,51 @@ int main () {
 
     Inode * arrayOfInodes = new Inode[numOfInodePerGroup];
 
-    int index = fetchInode(ext2File, 2, arrayOfInodes);
+    int index = fetchInode(ext2File, 30481, arrayOfInodes);
 
-    printf("%d", arrayOfInodes[index].i_mode); cout << endl;
-    cout << arrayOfInodes[index].i_size << endl;
-    cout << arrayOfInodes[index].i_blocks << endl;
-    cout << arrayOfInodes[index].i_uid << endl;
-    cout << arrayOfInodes[index].i_gid << endl;
-    cout << arrayOfInodes[index].i_flags << endl;
+    printf("%d", (*arrayOfInodes).i_mode); cout << endl;
+    cout << (*arrayOfInodes).i_size << endl;
+    cout << (*arrayOfInodes).i_blocks << endl;
+    cout << (*arrayOfInodes).i_uid << endl;
+    cout << (*arrayOfInodes).i_gid << endl;
+    cout << (*arrayOfInodes).i_flags << endl;
 
     inodeInUse(ext2File, 2);
+
+    char buffer [1024];
+
+    fetchBlockFromFile(ext2File, arrayOfInodes + index, 11, buffer);
+
+    cout << "Buffer: " << buffer[0];
+
+    displayBuffer((uint8_t*)arrayOfInodes, (*ext2File).superBlocks.s_inode_size, 0);
 
 }
 
 int32_t fetchInode(struct Ext2File *ext2File, uint32_t iNum, struct Inode *buf) {
     // Group number where the desired inode is located
-    int group = (iNum -  1) / (*ext2File).superBlocks.s_inodes_per_group;
+    int group = (iNum - 1) / ext2File -> superBlocks.s_inodes_per_group;
 
-    // Find the index inside the target group
-    int index = (iNum - 1) % (*ext2File).superBlocks.s_inodes_per_group;
+    // Adjust the iNum
+    iNum = (iNum - 1) % ext2File -> superBlocks.s_inodes_per_group;
 
-    // Find the number of inode per group
-    int numOfInodePerGroup = (*ext2File).superBlocks.s_log_block_size / (*ext2File).superBlocks.s_inode_size;
+    // Number of inodes per block
+    int numOfInodesPerBlock = ext2File -> superBlocks.s_log_block_size / ext2File -> superBlocks.s_inode_size;
 
-    // Find the block number inside the group
-    int block = index / numOfInodePerGroup;
+    // Find the block where the given inode is located
+    int inodeBlockNum = (iNum / numOfInodesPerBlock) + ext2File -> blockGroupDescriptorstable[group].bg_inode_table;
 
-    // Index of the desired inode inside the block
-    index = index % numOfInodePerGroup;
+    // Find offset of inode in the block
+    int offsetInBlock = iNum % numOfInodesPerBlock;
 
-    Inode * arrayOfInodes = new Inode [1024];
+    // The temp block
+    char tempBlock[1024];
 
-    // Fetch one block
-    fetchBlock(ext2File, (*(ext2File -> blockGroupDescriptorstable + group)).bg_inode_table + block, buf);
+    // Fetch the block into the temp buffer
+    fetchBlock(ext2File, inodeBlockNum, tempBlock);
 
-    return index;
+    // Read the tempBlock to the buffer
+    *buf = ((Inode *)tempBlock)[offsetInBlock];
 }
 
 int32_t writeInode(struct Ext2File *ext2File,uint32_t iNum, void *buf) {
@@ -1273,3 +1292,26 @@ void closeDir(struct Directory * directory) {
     delete directory;
 }
 
+uint32_t traversePath(Ext2File *f, char *path) {
+    // Start
+    int start = 1;
+
+    // Length of the path
+    int len = strlen(path);
+
+    // Inode number
+    int iNum = 2;
+
+    // End index of the path
+    int endPath = start + 1;
+
+    while (start < len && iNum != 0) {
+        while (path[endPath] != 0 && path[endPath] != '/') {
+            endPath ++;
+        }
+
+        path[endPath] = 0;
+
+
+    }
+}
