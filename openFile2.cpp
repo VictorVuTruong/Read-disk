@@ -14,43 +14,30 @@
 using namespace std;
 
 // Function prototypes
-// This is the function read the header of the disk
 struct VDIFile *vdiOpen(const char *);
 
-// This is the partition open function
 struct PartitionFile *partitionOpen(struct VDIFile *, struct PartitionEntry);
 
-// This is the displayBufferPage function
 void displayBufferPage (uint8_t *, uint32_t, uint32_t, uint64_t);
 
-// This is the displayBuffer function1
 void displayBuffer(uint8_t *, uint32_t, uint64_t);
 
-// This is the vdiClose function
 void vdiClose (struct VDIFile *);
 
-// This is the vdiRead function
 ssize_t vdiRead (struct VDIFile *, void *, int);
 
-// This is the vdiWrite function
 ssize_t vdiWrite (struct VDIFile *, void *, int);
 
-// This is the vdiSeek function
 off_t vdiSeek (VDIFile *, off_t, int);
 
-// This is the function to close the partition
 void partitionClose(struct PartitionFile *);
 
-// This is the function partitionRead
 ssize_t partitionRead(struct PartitionFile *,void *, int);
 
-// This is the function partitionWrite
 ssize_t partitionWrite(struct PartitionFile *,void *,size_t);
 
-// This is the function partitionSeek
 off_t partitionSeek(struct PartitionFile *, off_t, int);
 
-// This is the ext2Open function
 struct Ext2File *ext2Open(char *fn, int32_t pNum);
 
 void ext2Close (struct Ext2File *f);
@@ -69,10 +56,6 @@ int32_t fetchBGDT(struct Ext2File *,uint32_t, struct Ext2BlockGroupDescriptor *)
 
 int32_t writeBGDT(struct Ext2File *,uint32_t, struct Ext2BlockGroupDescriptor *);
 
-void dumpBGDT (struct Ext2File *);
-
-void dumpSuperBlock(Ext2Superblocks *);
-
 int32_t fetchInode(struct Ext2File * ,uint32_t, struct Inode *);
 
 int32_t writeBlock(struct Ext2File *,uint32_t , void *);
@@ -83,13 +66,15 @@ int32_t freeInode(struct Ext2File * ,uint32_t);
 
 uint32_t allocateInode(struct Ext2File *,int32_t);
 
+int32_t fetchBlockFromFile(struct Inode *i,uint32_t bNum, void *buf);
+
 int32_t writeBlockToFile(struct Inode *i,uint32_t bNum, void *buf);
 
 int32_t fetchBlockFromFile(struct Ext2File *, struct Inode *, uint32_t, void *);
 
 int32_t writeBlockToFile(struct Ext2File *, struct Inode *, uint32_t, void *, uint32_t);
 
-bool getNextDirent(Ext2File *, struct Directory *, uint32_t &, char *);
+bool getNextDirent(struct Directory *, uint32_t &, char *);
 
 struct Directory *openDir(struct Ext2File *, uint32_t);
 
@@ -97,9 +82,11 @@ void rewindDir(struct Directory *);
 
 void closeDir(struct Directory *);
 
-int locateBlock(struct Ext2File *, int);
+uint32_t searchDir(struct Ext2File *f,uint32_t iNum,char *target);
 
 uint32_t traversePath(Ext2File *, char *);
+
+uint32_t copyVDIFileToHost(Ext2File*, char *, char *);
 
 // This is to convert char into hex
 struct HexCharStruct {
@@ -307,23 +294,17 @@ struct Inode {
 struct Dirent {
     uint32_t iNum;
     uint16_t recLen;
-    uint8_t nameLen;
-    uint8_t fileType;
-    uint8_t name[1];
+    uint8_t nameLen, fileType,name[1];
 };
 
-
-struct Directory {
+struct Directory{
     ssize_t  cursor;
-    uint32_t iNum;
+    uint32_t inodeNum;
     Inode inode;
-    uint8_t *ptr;
+    uint8_t *pointer;
     Ext2File *ext2File;
     Dirent *dirent;
 };
-
-//Initializing I/O functions for Ext2File access
-struct blocks{};
 
 struct Ext2File {
 
@@ -331,7 +312,7 @@ struct Ext2File {
     VDIFile vdiFile;
 
     /** Partition File */
-    PartitionFile * partitionFile;
+    PartitionFile partitionFile;
 
     ssize_t numberofBlockGroups;
 
@@ -340,15 +321,13 @@ struct Ext2File {
 
     /** One array of block group descriptors */
     Ext2BlockGroupDescriptor * blockGroupDescriptorstable;
-
-    //number of groups = (blocks + blocks per group - 1) / 2
 };
 
 void displayBufferPage (uint8_t *buffer, uint32_t count, uint32_t start, uint64_t offset) {
 
     int fileHandler = open("Test-dynamic-1k.vdi", O_RDONLY);
 
-    //lseek(fileHandler, offset, SEEK_SET);
+    lseek(fileHandler, offset, SEEK_SET);
 
     //read(fileHandler, buffer, count);
 
@@ -400,90 +379,6 @@ void displayBuffer(uint8_t *buffer, uint32_t count, uint64_t offset){
 	}
 }
 
-/**
-//printing blocks of size of 256
-void displayBufferPage(uint8_t *buf, uint32_t count, uint32_t start,uint64_t offset) {
-    cout << "In hexadecimal" << endl;
-    cout << endl;
-    //for formatting
-    int counter = 0;
-    //loop from start to however many bytes (count) we need to read
-    for (int i = start ; i <=  start+count; i++) {
-        //only showing bytes from start through start+count
-        if (start <= i && i < start + count) {
-            //changing to unsigned int in case there is anything negative
-            uint8_t byte = buf[i];
-            cout << setfill('0') << setw(2) << hex << (int) (byte) << " ";
-        } else {
-            //if we cross the number of bytes that was asked to read, stop reading
-            cout <<endl;
-            break;
-        }
-
-        //for formatting
-        counter++;
-        if (counter % 16 ==0){
-            cout << endl;
-        }
-
-    }
-
-    // for printing characters
-    cout << endl;
-    cout << "In text" << endl;
-    cout << endl;
-
-    //loop from start to however many bytes (count) we need to read
-    for (int i = start; i <= count; i++) {
-        //only showing bytes from start through start+count
-        if (start <= i && i < start + count) {
-            //changing to unsigned int in case there is anything negative
-            uint8_t byte = buf[i];
-            //checking for and printing any character byte
-            if (isprint(int(byte))) {
-                cout << byte << " ";
-            } else {
-                cout << " ";
-            }
-        }
-            //if we cross the number of bytes that was asked to read, stop reading
-        else{
-            cout << endl;
-            break;
-        }
-    }
-}
-//printing buffer blocks larger than 256 byte
-void displayBuffer(uint8_t *buf,uint32_t count, uint64_t offset){
-    //finding the number of times displaybufferpage should be printed to print the entire buffer
-    int numLoop = 4;
-    uint32_t originalcount = count;
-    uint64_t initialOffset = offset;
-    //call displayBufferPage numLopp times until entire buffer is printed
-    for (int i = 0; i <= numLoop ; ++i) {
-        //if count is greater than 256, call displaybuffer, increase offset and decrease count size
-        if (originalcount >= 256) {
-            displayBufferPage(buf, 256, 0, initialOffset);
-            originalcount = originalcount- 256;
-            initialOffset = initialOffset + 256;
-        }
-
-        //if count is less than 256, call displaybufferpage only once to print all the leftover characters
-        if (originalcount >0 && originalcount < 256){
-            displayBufferPage(buf,originalcount,0,initialOffset);
-            break;
-        }
-    }
-
-}
-
-// get the VDI file's byte location of the desired block number
-int locateBlock(Ext2File * ext2File, int blockNum) {
-    return (blockNum * (*ext2File).superBlocks.s_log_block_size) + ((*ext2File).superBlocks.s_first_data_block * (*ext2File).superBlocks.s_log_block_size);
-}
-
-**/
-
 struct VDIFile *vdiOpen (const char * fn) {
     // Establish connection to the disk
 	int fileIndex = open (fn, O_RDONLY);
@@ -503,13 +398,10 @@ struct VDIFile *vdiOpen (const char * fn) {
 ssize_t vdiRead(struct VDIFile *f, void *buf, int counts) {
     // Use lseek to seek the cursor to the location need to be read
     // The location to start reading is the current value of the VDIFile cursor plus the data offset
-    lseek(f -> fileDescriptor, f -> cursor, SEEK_SET);
+    lseek(f -> fileDescriptor, f -> cursor + f -> header.offData, SEEK_SET);
 
     // Read the given number of bytes into the buffer passed to this function as a parameter
     int numOfBytesRead = read(f->fileDescriptor, buf, counts);
-
-    // Advance the cursor by the number of bytes read
-    (*f).cursor += numOfBytesRead;
 
     // Return the number of bytes read
     if(numOfBytesRead >= 0){
@@ -525,9 +417,6 @@ ssize_t vdiWrite(struct VDIFile *f, void *buf, int counts) {
     // Write the given number of bytes from the given buffer to the disk
     int numOfBytesWritten = write((*f).fileDescriptor, buf, counts);
 
-    // Advance the cursor by the number of bytes read
-    //(*f).cursor += numOfBytesWritten;
-
     // Return the number of bytes read
     return numOfBytesWritten;
 }
@@ -538,7 +427,8 @@ off_t vdiSeek (struct VDIFile *f, off_t offset, int anchor) {
 
     // Set the right new location based on the anchor
     if (anchor == SEEK_SET) {
-        newLoc = offset + f -> header.offData;
+        //newLoc = offset + f -> header.offData;
+        newLoc = offset;
     } else if (anchor == SEEK_CUR) {
         newLoc = offset + (*f).cursor;
     } else if (anchor == SEEK_END) {
@@ -555,6 +445,7 @@ off_t vdiSeek (struct VDIFile *f, off_t offset, int anchor) {
     // Return the new location
     return newLoc;
 }
+
 
 void vdiClose(struct VDIFile *f) {
     // Close the file whose file handler is given
@@ -582,136 +473,144 @@ struct PartitionFile *partitionOpen(struct VDIFile * vdiFile, struct PartitionEn
 	PartitionFile *ptr2 = new PartitionFile;
     ptr2->vdiFile = vdiFile;
     ptr2->partitionEntry = partitionEntry;
-    /**
-    // Use vdiSeek to seek to the location of the partition table
-    vdiSeek(vdiFile, 446, SEEK_SET);
-    // Use vdiRead to read the data of the partition table into the array of entries
-    vdiRead(vdiFile, ptr1->table, 64);
-    // User vdiSeek again to go to the location of the given partition
-    vdiSeek(vdiFile, 446 + (partitionNumber - 1) * 16, SEEK_SET);
-    // Use vdiRead again to read the data of the selected partition into the partitionEntry of the PartitionFile structure
-    vdiRead(vdiFile, &(ptr2->partitionEntry), 16);
-    */
+
 	// Return the pointer
 	return ptr2;
 }
 
 ssize_t partitionRead(struct PartitionFile *partitionFile, void *buf, int count) {
+    // If the number of bytes want to read is with the partition, continue to read the number of bytes
+    // to the buffer
     if ((*partitionFile).partitionEntry.LBAStart * 512 <= (*partitionFile).vdiFile->cursor &&
      ((count + (*partitionFile).vdiFile->cursor) <=  ((*partitionFile).partitionEntry.LBAStart+ (*partitionFile).partitionEntry.nSectors)*512)){
         lseek(partitionFile->vdiFile->fileDescriptor,partitionFile->vdiFile->cursor,SEEK_SET);
+        // Read information into the buffer
         int num = vdiRead(partitionFile->vdiFile,buf,count);
+
+        // Return number of bytes read
         return num;
-    }
+    } // Number of bytes want to read doesn't within the partition
     else {
+        // Return -1 since nothing is read
         return -1;
     }
-
 }
 
-ssize_t partitionWrite(struct PartitionFile *f, void *buf, size_t count) {
-    if (((*f).partitionEntry.LBAStart < ((*f).vdiFile -> cursor)) && ((count + (*f).vdiFile -> cursor) < (*f).partitionEntry.nSectors)) {
-            return vdiWrite(f -> vdiFile, buf, count);
-        } else {
-            return 0;
-        }
-}
-
-off_t partitionSeek(struct PartitionFile *f,off_t offset,int anchor) {
-    //create a new location within the file
-    off_t location;
-
-    //Seek starts from the location of the first sector of the partition
-    location = vdiSeek((*f).vdiFile , offset + (*f).partitionEntry.LBAStart*512, SEEK_SET);
-
-    //no change in location of cursor if cursor is moved outside the first partition
-    if (location < (*f).partitionEntry.LBAStart * 512 &&
-         location >=  ( (*f).partitionEntry.LBAStart+ (*f).partitionEntry.nSectors)*512) {
-        location = (*f).vdiFile->cursor;
-        cout << "too big";
+ssize_t partitionWrite(struct PartitionFile *partitionFile, void *buf, size_t count) {
+    // If the number of bytes want to write is with the partition, continue to write the number of bytes
+    // from the buffer to the partition
+    if ((*partitionFile).partitionEntry.LBAStart * 512 <= (*partitionFile).vdiFile->cursor &&
+     ((count + (*partitionFile).vdiFile->cursor) <=  ((*partitionFile).partitionEntry.LBAStart+ (*partitionFile).partitionEntry.nSectors)*512)) {
+        // Return the number of bytes that were written into the partition
+        return vdiWrite(partitionFile -> vdiFile, buf, count);
+    } else {
+        // Return -1 since nothing is written into the partition
+        return -1;
     }
+}
+
+off_t partitionSeek(struct PartitionFile *f, off_t offset, int anchor) {
+    // Desired location that we want to seek to
+    off_t newLoc;
+
+    // Seek to the desired offset location plus the location of the first sector
+    newLoc = vdiSeek((*f).vdiFile , offset + (*f).partitionEntry.LBAStart*512, SEEK_SET);
+
+    // If the desired location is outside of the current partition, reset the position
+    // so that the current position does not change
+    // The desired location will be consider out of partition space if it is greater than number of sectors in the partition plus the location of the first sector
+    // or less than the location of the first sector
+    if (newLoc < (*f).partitionEntry.LBAStart * 512 ||
+        newLoc >= ((*f).partitionEntry.LBAStart + (*f).partitionEntry.nSectors)*512) {
+        newLoc = (*f).vdiFile->cursor;
+    } // If the desired location is within the partition, set the cursor in the vdiFile to the new desired location
     else {
-        (*f).vdiFile->cursor = location;
+        (*f).vdiFile->cursor = newLoc;
     }
 
-    return (*f).vdiFile->cursor;
-}
-
-void readPartitionEntry( struct VDIFile* vdiFile,PartitionEntry partitionEntry[4]){
-    // Use vdiSeek to seek to the location of the partition table
-    vdiSeek(vdiFile, 446, SEEK_SET);
-    // Use vdiRead to read the data of the partition table into the array of entries
-    vdiRead(vdiFile, partitionEntry,64);
+    // Return the number of bytes change
+    return (*f).vdiFile -> cursor - f->partitionEntry.LBAStart*512;
 }
 
 struct Ext2File *ext2Open(char *fn, int pNum) {
-    Ext2File *ptr = new Ext2File;
+    // Pointer to the Ext2File which going to be opened and returned
+    Ext2File *ext2File = new Ext2File;
 
-    // VDIFile pointer
+    // Pointer to the VDIFile
     VDIFile * vdiFile = vdiOpen (fn);
+
+    // Array to hold 4 partition entries
     PartitionEntry *partitionEntry = new PartitionEntry[4];
 
     // Use vdiSeek to seek to the location of the partition table
     vdiSeek(vdiFile, 446, SEEK_SET);
+
     // Use vdiRead to read the data of the partition table into the array of entries
-    vdiRead(vdiFile, partitionEntry,64);
+    vdiRead(vdiFile, partitionEntry, 64);
 
     //open the partition which the user wants to open
-    ptr->partitionFile= partitionOpen(vdiFile,partitionEntry[pNum]);
+    ext2File -> partitionFile = *partitionOpen(vdiFile, partitionEntry[pNum]);
 
     //seek to the super block of the partition and read into the  superblock of new Ext2File it
-    partitionSeek(ptr->partitionFile,1024,SEEK_SET);
-    partitionRead(ptr->partitionFile,&ptr->superBlocks, 1024);
+    partitionSeek(&ext2File -> partitionFile, 1024, SEEK_SET);
+    partitionRead(&ext2File -> partitionFile, &ext2File -> superBlocks, 1024);
 
-    //update two fields in the superblock
-    ptr->superBlocks.s_log_block_size= 1024* pow (2,ptr->superBlocks.s_log_block_size);
-    ptr->numberofBlockGroups = (ptr->superBlocks.s_blocks_count/ptr->superBlocks.s_blocks_per_group);
+    //update two fields in the Ext2File structure
+    ext2File -> superBlocks.s_log_block_size = 1024* pow (2, ext2File -> superBlocks.s_log_block_size);
+    ext2File -> numberofBlockGroups = (ext2File -> superBlocks.s_blocks_count / ext2File -> superBlocks.s_blocks_per_group);
 
     //set the size of the block group descriptor table based on the number of block groups in the file
-    ptr->blockGroupDescriptorstable = new Ext2BlockGroupDescriptor[ptr->numberofBlockGroups+1];
+    ext2File -> blockGroupDescriptorstable = new Ext2BlockGroupDescriptor[ext2File -> numberofBlockGroups + 1];
 
     //reading block descriptor table of each block group
-    for (int i = 0; i <= ptr->numberofBlockGroups; ++i) {
+    for (int i = 0; i <= ext2File -> numberofBlockGroups; ++i) {
         //seek to the second block of the block group
-        partitionSeek(ptr->partitionFile,1024*2+32*i,SEEK_SET);
+        partitionSeek(&ext2File -> partitionFile, (ext2File -> superBlocks.s_first_data_block + 1)*ext2File -> superBlocks.s_log_block_size + 32 * i, SEEK_SET);
 
         //read into the block group descriptor of that block group so that each block group descriptor entries fill the block descriptor table
-        partitionRead(ptr->partitionFile,&ptr->blockGroupDescriptorstable[i],32);
+        partitionRead(&ext2File -> partitionFile, &ext2File -> blockGroupDescriptorstable[i], 32);
     }
 
-    // Return the pointer
-    return ptr;
+    // Return the pointer to the ext2File that just opened
+    return ext2File;
 };
 
 void ext2Close (struct Ext2File *f){
     delete(f);
 }
 
-
 int32_t fetchBlock(struct Ext2File *ext2File, uint32_t blockNum, void *buf){
-    partitionSeek(ext2File->partitionFile, (blockNum * (*ext2File).superBlocks.s_log_block_size), SEEK_SET);
+    // Use partitionSeek to seek to the location of the desired block
+    partitionSeek(&ext2File->partitionFile, (blockNum * (*ext2File).superBlocks.s_log_block_size), SEEK_SET);
 
-    int32_t result = partitionRead(ext2File->partitionFile, buf, ext2File->superBlocks.s_log_block_size);
+    // Use partitionRead to read information of the desired block into the buffer
+    int32_t bytesRead = partitionRead(&ext2File->partitionFile, buf, ext2File->superBlocks.s_log_block_size);
 
-    if(result != 0){
-        cout << "Fail to fetch!" <<endl ;
+    // bytesRead 0 indicate that nothing is read
+    if(bytesRead != 0){
+        cout << "Fail to fetch block!" <<endl ;
         return -1;
     }
 
-    return result;
+    // Return the number of bytes read
+    return bytesRead;
 }
 
 int32_t writeBlock(struct Ext2File *ext2File, uint32_t blockNum, void *buf){
-    partitionSeek(ext2File->partitionFile, (blockNum * (*ext2File).superBlocks.s_log_block_size), SEEK_SET);
+    // Use partitionSeek to seek to the location of the desired block
+    partitionSeek(&ext2File->partitionFile, (blockNum * (*ext2File).superBlocks.s_log_block_size), SEEK_SET);
 
-    int result = partitionWrite(ext2File->partitionFile, buf, ext2File->superBlocks.s_log_block_size);
+    // Use partitionWrite to write information from the buffer to the desired block
+    int bytesWritten = partitionWrite(&ext2File->partitionFile, buf, ext2File->superBlocks.s_log_block_size);
 
-    if(result != 0){
-        cout << "Fail to fetch!" << endl;
+    // bytesWritten 0 indicate that nothing is written
+    if(bytesWritten != 0){
+        cout << "Fail to write block!" << endl;
         return -1;
     }
 
-    return result;
+    // Return the number of bytes written
+    return bytesWritten;
 }
 
 int32_t fetchSuperblock(struct Ext2File *ext2File,uint32_t blockNum, struct Ext2Superblocks *ext2SuperBlock){
@@ -739,16 +638,15 @@ int32_t fetchSuperblock(struct Ext2File *ext2File,uint32_t blockNum, struct Ext2
     // find the position where the superblock begins based on the number of block groups before that superblock
     else{
         //seek to the end of the block before superblock
-        partitionSeek(ext2File->partitionFile,ext2File->superBlocks.s_first_data_block *ext2File->superBlocks.s_log_block_size,SEEK_SET);
+        partitionSeek(&ext2File->partitionFile,ext2File->superBlocks.s_first_data_block *ext2File->superBlocks.s_log_block_size,SEEK_SET);
 
         //read 1024 bytes from there into the passed superblock
-        partitionRead(ext2File->partitionFile,ext2SuperBlock,1024);
+        partitionRead(&ext2File->partitionFile,ext2SuperBlock,1024);
         (ext2SuperBlock->s_log_block_size) = 1024 * pow(2,ext2SuperBlock->s_log_block_size);
 
     }
     return 0;
 }
-
 int32_t writeSuperblock(struct Ext2File *ext2File,uint32_t blockNum, struct Ext2Superblocks *ext2Superblock){
     int result = blockNum / ext2File->superBlocks.s_blocks_per_group;
 
@@ -761,25 +659,25 @@ int32_t writeSuperblock(struct Ext2File *ext2File,uint32_t blockNum, struct Ext2
         memcpy(ext2File, ptr, 1024);
 
     } else {
-        partitionSeek(ext2File->partitionFile, (*ext2File).superBlocks.s_log_block_size, SEEK_SET);
-        partitionWrite(ext2File->partitionFile, ext2Superblock, 1024);
+        partitionSeek(&ext2File->partitionFile, (*ext2File).superBlocks.s_log_block_size, SEEK_SET);
+        partitionWrite(&ext2File->partitionFile, ext2Superblock, 1024);
         (ext2Superblock->s_log_block_size) = 1024 * pow(2,ext2Superblock->s_log_block_size);
     }
 }
 
 
 int32_t fetchBGDT(struct Ext2File *ext2File, uint32_t blockNum, Ext2BlockGroupDescriptor *bgdt) {
+    // Get the block group descriptor table where the block number is located
+    int group = round(blockNum/ ext2File->superBlocks.s_blocks_per_group);
 
-    int groupNumber = round(blockNum/ ext2File->superBlocks.s_blocks_per_group);
-
-    bgdt->bg_inode_bitmap = ext2File->blockGroupDescriptorstable[groupNumber].bg_inode_bitmap;
-    bgdt->bg_block_bitmap = ext2File->blockGroupDescriptorstable[groupNumber].bg_block_bitmap;
-    bgdt->bg_free_blocks_count = ext2File->blockGroupDescriptorstable[groupNumber].bg_free_blocks_count;
-    bgdt->bg_free_inodes_count = ext2File->blockGroupDescriptorstable[groupNumber].bg_free_inodes_count;
-    bgdt->bg_used_dirs_count = ext2File->blockGroupDescriptorstable[groupNumber].bg_used_dirs_count;
-    bgdt->bg_pad = ext2File->blockGroupDescriptorstable[groupNumber].bg_pad;
-    bgdt->bg_inode_table = ext2File->blockGroupDescriptorstable[groupNumber].bg_inode_table;
-
+    // Populate all fields in the block group descriptor table structure which is treated as a buffer in this function
+    bgdt -> bg_inode_bitmap = ext2File -> blockGroupDescriptorstable[group].bg_inode_bitmap;
+    bgdt -> bg_block_bitmap = ext2File -> blockGroupDescriptorstable[group].bg_block_bitmap;
+    bgdt -> bg_free_blocks_count = ext2File -> blockGroupDescriptorstable[group].bg_free_blocks_count;
+    bgdt -> bg_free_inodes_count = ext2File -> blockGroupDescriptorstable[group].bg_free_inodes_count;
+    bgdt -> bg_used_dirs_count = ext2File -> blockGroupDescriptorstable[group].bg_used_dirs_count;
+    bgdt -> bg_pad = ext2File -> blockGroupDescriptorstable[group].bg_pad;
+    bgdt -> bg_inode_table = ext2File -> blockGroupDescriptorstable[group].bg_inode_table;
     for (int i = 1; i <3 ; ++i) {
         bgdt->bg_reserved[i] = ext2File->blockGroupDescriptorstable[groupNumber].bg_pad;
     }
@@ -788,75 +686,23 @@ int32_t fetchBGDT(struct Ext2File *ext2File, uint32_t blockNum, Ext2BlockGroupDe
 }
 
 int32_t writeBGDT(struct Ext2File *ext2File,uint32_t blockNum,Ext2BlockGroupDescriptor *bgdt) {
-
+    // Get the block group descriptor table where the block number is located
     int groupNumber = round(blockNum/ ext2File->superBlocks.s_blocks_per_group);
 
-    ext2File->blockGroupDescriptorstable[groupNumber].bg_inode_bitmap = bgdt->bg_inode_bitmap;
-    ext2File->blockGroupDescriptorstable[groupNumber].bg_block_bitmap = bgdt->bg_block_bitmap;
-    ext2File->blockGroupDescriptorstable[groupNumber].bg_free_blocks_count = bgdt->bg_free_blocks_count;
-    ext2File->blockGroupDescriptorstable[groupNumber].bg_free_inodes_count = bgdt->bg_free_inodes_count;
-    ext2File->blockGroupDescriptorstable[groupNumber].bg_used_dirs_count = bgdt->bg_used_dirs_count;
-    ext2File->blockGroupDescriptorstable[groupNumber].bg_pad = bgdt->bg_pad;
-    ext2File->blockGroupDescriptorstable[groupNumber].bg_inode_table = bgdt->bg_inode_table;
-
+    // Write all fields in the block group descriptor table with information from the block group descriptor table
+    // which is passed to this function as a buffer
+    ext2File -> blockGroupDescriptorstable[groupNumber].bg_inode_bitmap = bgdt -> bg_inode_bitmap;
+    ext2File -> blockGroupDescriptorstable[groupNumber].bg_block_bitmap = bgdt -> bg_block_bitmap;
+    ext2File -> blockGroupDescriptorstable[groupNumber].bg_free_blocks_count = bgdt -> bg_free_blocks_count;
+    ext2File -> blockGroupDescriptorstable[groupNumber].bg_free_inodes_count = bgdt -> bg_free_inodes_count;
+    ext2File -> blockGroupDescriptorstable[groupNumber].bg_used_dirs_count = bgdt -> bg_used_dirs_count;
+    ext2File -> blockGroupDescriptorstable[groupNumber].bg_pad = bgdt -> bg_pad;
+    ext2File -> blockGroupDescriptorstable[groupNumber].bg_inode_table = bgdt -> bg_inode_table;
     for (int i = 0; i <3 ; ++i) {
          ext2File->blockGroupDescriptorstable[groupNumber].bg_pad = bgdt->bg_reserved[i];
     }
 
     return 0;
-}
-
-//function to display contains of superblock structure
-void dumpSuperBlock(Ext2Superblocks *ext2SuperBlock){
-    cout << endl;
-    cout << "~~~~~~~~~~The Given sSuperblock~~~~~~~~~~"<< endl;
-    printf("Number of inodes: %d", ext2SuperBlock->s_inodes_count);
-
-    cout << endl;
-    printf("Number of blocks: %d",  ext2SuperBlock->s_blocks_count);
-    cout << endl;
-    printf("Number of reserved blocks: %d",  ext2SuperBlock->s_r_blocks_count);
-    cout << endl;
-    printf("Number of free blocks: %d",  ext2SuperBlock->s_free_blocks_count);
-    cout << endl;
-    printf("Number of free inodes: %d",  ext2SuperBlock->s_free_inodes_count);
-    cout << endl;
-    printf("First data block: %d",  ext2SuperBlock->s_first_data_block);
-    cout << endl;
-    printf("Block size: %d",  ext2SuperBlock->s_log_block_size);
-    cout << endl;
-    printf("Log fragment size: %d",   ext2SuperBlock->s_log_frag_size);
-    cout << endl;
-    printf("Blocks per group: %d",   ext2SuperBlock->s_blocks_per_group);
-    cout << endl;
-    printf("Fragments per group: %d",   ext2SuperBlock->s_frags_per_group);
-    cout << endl;
-    printf("Inodes per group: %d",   ext2SuperBlock->s_inodes_per_group);
-    cout << endl;
-    printf("Mount count: %d",   ext2SuperBlock->s_mnt_count);
-    cout << endl;
-    printf("Max mount count: %d",   ext2SuperBlock->s_max_mnt_count);
-    cout << endl;
-    printf("Magic number: %#08X",   ext2SuperBlock->s_magic);
-
-}
-
-
-//displaying the main block group descriptor table
-void dumpBGDT (struct Ext2File *ext2File){
-    cout << endl;
-    cout << "BGDT INFO" << endl;
-    for (int i = 0; i <= ext2File->numberofBlockGroups ; ++i) {
-        cout << "Block Number : " << i <<endl;
-        cout << "Block Bitmap : " << ext2File->blockGroupDescriptorstable[i].bg_block_bitmap << endl;
-        cout << "Inode Bitmap : " << ext2File->blockGroupDescriptorstable[i].bg_inode_bitmap << endl;
-        cout << "Inode Table : " << ext2File->blockGroupDescriptorstable[i].bg_inode_table << endl;
-        cout << "Free Blocks Count : " << ext2File->blockGroupDescriptorstable[i].bg_free_blocks_count <<endl;
-        cout << "Free Inodes Count : " << ext2File->blockGroupDescriptorstable[i].bg_free_inodes_count << endl;
-        cout << "Used Dirs Count : " << ext2File->blockGroupDescriptorstable[i].bg_used_dirs_count << endl;
-        cout << "Block Pad : " << ext2File->blockGroupDescriptorstable[i].bg_pad<< endl;
-        cout << endl;
-    }
 }
 
 int32_t fetchInode(struct Ext2File *ext2File, uint32_t iNum, struct Inode *buf) {
@@ -876,14 +722,17 @@ int32_t fetchInode(struct Ext2File *ext2File, uint32_t iNum, struct Inode *buf) 
     int offsetInBlock = iNum % numOfInodesPerBlock;
 
     // The temp block
-    char tempBlock[1024];
+    uint8_t* tempBlock = new uint8_t [ext2File->superBlocks.s_log_block_size];
 
     // Fetch the block into the temp buffer
     fetchBlock(ext2File, inodeBlockNum, tempBlock);
 
     // Read the tempBlock to the buffer
     *buf = ((Inode *)tempBlock)[offsetInBlock];
+
 }
+
+
 
 int32_t writeInode(struct Ext2File *ext2File,uint32_t iNum, void *buf) {
     // Group number where the desired inode is located
@@ -1026,17 +875,15 @@ int32_t freeInode(struct Ext2File *ext2File, uint32_t iNum) {
 }
 
 
+
 int32_t fetchBlockFromFile(struct Ext2File *ext2File, struct Inode *inode, uint32_t bNum, void *buf) {
     // Pointer which will be used to point to the blockList
     void * blockListPointer;
 
-    // Adjusted block number
-    //int adjustedBlockNumber;
-
     int index;
 
-    // Find the number k
-    int k = 1024 / 4;
+    // Find the number k which is the block size divided by 4
+    int k = ext2File -> superBlocks.s_log_block_size / 4;
 
     if (bNum < 12) {
         // Make the blockList pointer points to the i_block
@@ -1138,11 +985,8 @@ int32_t fetchBlockFromFile(struct Ext2File *ext2File, struct Inode *inode, uint3
 
 
 int32_t writeBlockToFile(struct Ext2File *ext2File, struct Inode *inode, uint32_t bNum, void *buf, uint32_t iNum) {
-    // Find the number k
-    int k = 1024 / 4;
-
-    // Adjusted block number
-    //int adjustedBlockNumber;
+    // Find the number k which is the block size divided by 4
+    int k = ext2File -> superBlocks.s_log_block_size / 4;
 
     // Figure out the block group that the iNum inode is located
     int blockGroupToAllocate = (iNum -  1) / (*ext2File).superBlocks.s_inodes_per_group;
@@ -1290,62 +1134,6 @@ int32_t writeBlockToFile(struct Ext2File *ext2File, struct Inode *inode, uint32_
     }
 }
 
-int main () {
-    Ext2File *ext2File= ext2Open("Test-fixed-1k.vdi",0);
-
-    //printf("%d", (*ext2File).superBlocks.s_inodes_count);
-    //Super Block
-
-    Ext2Superblocks ext2Superblock;
-    //cout << ext2Superblock.s_log_block_size<<endl;
-    //fetchSuperblock(ext2File,8200,&ext2Superblock);
-    //dumpSuperBlock(&ext2Superblock);
-
-    //BGDT
-    //Ext2BlockGroupDescriptor ext2BGDT;
-    //fetchBGDT(ext2File, 16385, &ext2BGDT);
-    //dumpBGDT(ext2File);
-
-    /*
-    Inode inode;
-    char buffer [1024];
-    fetchInode(ext2File,2, &inode);
-    fetchBlockFromFile(ext2File, &inode, 0, buffer);
-    cout << (inode).i_size << endl;
-    cout << (inode).i_blocks << endl;
-    cout << (inode).i_uid << endl;
-    cout << (inode).i_gid << endl;
-    cout << (inode).i_flags << endl;
-
-    //cout << "Buffer: " << buffer[0];
-
-    displayBuffer(reinterpret_cast<uint8_t *>(&buffer), 1024, 0);
-    */
-
-
-
-    char name[256];
-    uint32_t iNum;
-    Directory *d;
-
-    cout << "Root directory contents" << endl;
-    d = openDir(ext2File,2);
-    while (getNextDirent(ext2File, d,iNum,name)) {
-    cout << "Inode: " << iNum << " name: [" << name << "]" << endl;
-    }
-
-    //closeDir(d);
-    cout << endl;
-
-    cout << "lost+found directory contents" << endl;
-    d = openDir(ext2File,11);
-    while (getNextDirent(ext2File, d,iNum,name)) {
-    cout << "Inode: " << iNum << " name: [" << name << "]" << endl;
-    //cout << "Loop " << endl;
-    }
-
-}
-
 struct Directory *openDir(struct Ext2File * ext2File, uint32_t iNum) {
     // create new directory pointer
     Directory *directory = new Directory;
@@ -1354,13 +1142,13 @@ struct Directory *openDir(struct Ext2File * ext2File, uint32_t iNum) {
     directory -> cursor = 0;
 
     // Set the iNum in the directory structure to the desired inode number
-    directory -> iNum = iNum;
+    directory -> inodeNum = iNum;
 
     // Fetch the inode we want and bring the information into the inode of the directory structure
     fetchInode(ext2File, iNum, &directory -> inode);
 
     // Make the pointer of the directory structure point to the array with size is size of the block
-    directory -> ptr = new uint8_t[ext2File -> superBlocks.s_log_block_size];
+    directory -> pointer = new uint8_t[ext2File -> superBlocks.s_log_block_size];
 
     // Make the ext2File pointer in the directory structure point to the ext2File of this function
     directory -> ext2File = ext2File;
@@ -1369,39 +1157,36 @@ struct Directory *openDir(struct Ext2File * ext2File, uint32_t iNum) {
     return directory;
 }
 
-bool getNextDirent(Ext2File * ext2File, struct Directory * directory, uint32_t &iNum, char *name) {
-    // Block number
-    int bNum;
+bool getNextDirent(struct Directory * directory, uint32_t &iNum, char *name){
+    //Loop through everything in the directory
+    while (directory -> cursor < directory -> inode.i_size){
+        //find the block in the file which contains the directory
+        int bNum = directory -> cursor/ directory -> ext2File -> superBlocks.s_log_block_size;
 
-    // Offset
-    int offset;
-    //cout << "Still ok here";
-    while (directory -> cursor < directory -> inode.i_size) {
-        // Get the block number
-        bNum = directory -> cursor / ext2File -> superBlocks.s_log_block_size;
+        //fetch the directory
+        fetchBlockFromFile(directory -> ext2File, &directory -> inode, bNum, directory -> pointer);
 
-        // Get the offset
-        offset = directory -> cursor % ext2File -> superBlocks.s_log_block_size;
+        //find the offset of the directory entry from the start of the directory
+        int offset = directory -> cursor % directory -> ext2File -> superBlocks.s_log_block_size;
 
-        // Fetch that block from file
-        fetchBlockFromFile(ext2File, &directory -> inode, bNum, directory -> ptr);
-
-        // Set up information for the directory structure
-        directory -> dirent = (Dirent*)(directory -> ptr + offset);
+        // Modify the structure information
+        //point to the directory entry we want to access
+        directory -> dirent = (Dirent *) (directory -> pointer + offset);
+        // Move the cursor to the next directory entry
         directory -> cursor += directory -> dirent -> recLen;
 
-        if (directory -> dirent -> iNum != 0) {
+        //copy the name to the passed array if the inode is not zero
+        if (directory -> dirent -> iNum !=0) {
             iNum = directory -> dirent -> iNum;
 
             for (int i = 0; i < directory -> dirent -> nameLen; i++) {
-                name[i] = directory -> dirent -> name[i];
+                name[i]= directory -> dirent -> name[i];
             }
 
             name[directory -> dirent -> nameLen] = 0;
             return true;
         }
     }
-
     return false;
 }
 
@@ -1410,11 +1195,27 @@ void rewindDir(struct Directory * directory) {
     directory -> cursor = 0;
 }
 
-void closeDir(struct Directory * directory){
-    close(directory -> ext2File -> partitionFile -> vdiFile -> fileDescriptor);
+void closeDir(struct Directory *d){
+    close((*(d->ext2File)).partitionFile.vdiFile->fileDescriptor);
 }
 
-uint32_t traversePath(Ext2File *f, char *path) {
+
+uint32_t searchDir(struct Ext2File *ext2File,uint32_t iNum,char *target){
+    char name[256];
+    Directory *d;
+    d = openDir(ext2File,iNum);
+
+    while (getNextDirent(d,iNum, name)) {
+
+        int result = strcmp(target, name);
+        if(result == 0){
+            return iNum;
+        }
+    }
+    return 0;
+}
+
+uint32_t traversePath(Ext2File *ext2File, char *path) {
     // Start
     int start = 1;
 
@@ -1424,16 +1225,105 @@ uint32_t traversePath(Ext2File *f, char *path) {
     // Inode number
     int iNum = 2;
 
-    // End index of the path
-    int endPath = start + 1;
-
     while (start < len && iNum != 0) {
+        // End index of the path
+        int endPath = start + 1;
         while (path[endPath] != 0 && path[endPath] != '/') {
             endPath ++;
         }
-
         path[endPath] = 0;
-
-
+        iNum = searchDir(ext2File, iNum, path + start);
+        start = endPath + 1;
     }
+    cout << "Inum: " << iNum << endl;
+    return iNum;
 }
+
+int main () {
+
+    Ext2File *ext2File = ext2Open("Test-fixed-1k.vdi",0);
+
+    /** Test Step 4 **/
+    //Super Block
+
+    //Ext2Superblocks ext2Superblock;
+    //cout << ext2Superblock.s_log_block_size<<endl;
+    //fetchSuperblock(ext2File,8200,&ext2Superblock);
+    //dumpSuperBlock(&ext2Superblock);
+
+    //BGDT
+    //Ext2BlockGroupDescriptor ext2BGDT;
+    //fetchBGDT(ext2File, 16385, &ext2BGDT);
+    //dumpBGDT(ext2File);
+
+    /** Test Step 5 **/
+    /*
+    Inode inode;
+    char buffer [1024];
+    fetchInode(ext2File, 30481, &inode);
+    fetchBlockFromFile(ext2File, &inode, 0, buffer);
+    */
+
+    /** Test Step 6 **/
+
+    /*
+    char name[256];
+    uint32_t iNum;
+    Directory *d;
+
+    cout << "Root directory contents" << endl;
+    d = openDir(ext2File,2);
+    while (getNextDirent(d, iNum,name)) {
+        cout << "Inode: " << iNum << " name: [" << name << "]" << endl;
+    }
+    //closeDir(d);
+
+    cout << "\n\nlost+found directory contents" << endl;
+    d = openDir(ext2File,11);
+    while (getNextDirent(d, iNum,name)) {
+        cout << "Inode: " << iNum << " name: [" << name << "]" << endl;
+    }
+    //closeDir(d);
+    */
+
+
+    /** Test Step 7 **/
+    //char target[]= "/examples/05.Control/IfStatementConditional/IfStatementConditional.ino";
+    //traversePath(ext2File, target);
+
+    /** Test Step 8 **/
+    char fileName[]= "/examples/08.Strings/StringComparisonOperators/StringComparisonOperators.txt";
+    char copyPath[] = "test.png";
+    copyVDIFileToHost(ext2File, copyPath, fileName);
+}
+
+uint32_t copyVDIFileToHost(Ext2File* ext2File, char *path, char *fileName){
+    Inode inode;
+    uint8_t *block = new uint8_t[ext2File->superBlocks.s_log_block_size];
+
+    int inodeNum = traversePath(ext2File, fileName);
+    fetchInode(ext2File, inodeNum, &inode);
+
+    int fileDescriptor = open(path, O_WRONLY|O_CREAT, 0666); //The fileDescriptor should be 4
+    cout << "File Descriptor: " << fileDescriptor <<endl;
+
+    if(fileDescriptor == 4){
+        uint32_t blockSize = ext2File->superBlocks.s_log_block_size;
+        int bytesToWrite = blockSize;
+        int bytesLeft = inode.i_size;
+        for (int i = 0; i < blockSize; i++) {
+            fetchBlockFromFile(ext2File, &inode, i, block);
+            if(bytesToWrite < blockSize){
+                bytesToWrite = bytesLeft;
+            }
+
+            int w = write(fileDescriptor, block, bytesToWrite);
+        }
+    } else {
+        cout << "There's an error when copying VDI File to the host machine" <<endl;
+    }
+
+    cout << "File size: " << inode.i_size <<endl;
+
+}
+
