@@ -679,7 +679,7 @@ int32_t fetchBGDT(struct Ext2File *ext2File, uint32_t blockNum, Ext2BlockGroupDe
     bgdt -> bg_pad = ext2File -> blockGroupDescriptorstable[group].bg_pad;
     bgdt -> bg_inode_table = ext2File -> blockGroupDescriptorstable[group].bg_inode_table;
     for (int i = 1; i <3 ; ++i) {
-        bgdt->bg_reserved[i] = ext2File->blockGroupDescriptorstable[groupNumber].bg_pad;
+        bgdt->bg_reserved[i] = ext2File->blockGroupDescriptorstable[group].bg_pad;
     }
 
     return 0;
@@ -687,19 +687,19 @@ int32_t fetchBGDT(struct Ext2File *ext2File, uint32_t blockNum, Ext2BlockGroupDe
 
 int32_t writeBGDT(struct Ext2File *ext2File,uint32_t blockNum,Ext2BlockGroupDescriptor *bgdt) {
     // Get the block group descriptor table where the block number is located
-    int groupNumber = round(blockNum/ ext2File->superBlocks.s_blocks_per_group);
+    int group = round(blockNum/ ext2File->superBlocks.s_blocks_per_group);
 
     // Write all fields in the block group descriptor table with information from the block group descriptor table
     // which is passed to this function as a buffer
-    ext2File -> blockGroupDescriptorstable[groupNumber].bg_inode_bitmap = bgdt -> bg_inode_bitmap;
-    ext2File -> blockGroupDescriptorstable[groupNumber].bg_block_bitmap = bgdt -> bg_block_bitmap;
-    ext2File -> blockGroupDescriptorstable[groupNumber].bg_free_blocks_count = bgdt -> bg_free_blocks_count;
-    ext2File -> blockGroupDescriptorstable[groupNumber].bg_free_inodes_count = bgdt -> bg_free_inodes_count;
-    ext2File -> blockGroupDescriptorstable[groupNumber].bg_used_dirs_count = bgdt -> bg_used_dirs_count;
-    ext2File -> blockGroupDescriptorstable[groupNumber].bg_pad = bgdt -> bg_pad;
-    ext2File -> blockGroupDescriptorstable[groupNumber].bg_inode_table = bgdt -> bg_inode_table;
+    ext2File -> blockGroupDescriptorstable[group].bg_inode_bitmap = bgdt -> bg_inode_bitmap;
+    ext2File -> blockGroupDescriptorstable[group].bg_block_bitmap = bgdt -> bg_block_bitmap;
+    ext2File -> blockGroupDescriptorstable[group].bg_free_blocks_count = bgdt -> bg_free_blocks_count;
+    ext2File -> blockGroupDescriptorstable[group].bg_free_inodes_count = bgdt -> bg_free_inodes_count;
+    ext2File -> blockGroupDescriptorstable[group].bg_used_dirs_count = bgdt -> bg_used_dirs_count;
+    ext2File -> blockGroupDescriptorstable[group].bg_pad = bgdt -> bg_pad;
+    ext2File -> blockGroupDescriptorstable[group].bg_inode_table = bgdt -> bg_inode_table;
     for (int i = 0; i <3 ; ++i) {
-         ext2File->blockGroupDescriptorstable[groupNumber].bg_pad = bgdt->bg_reserved[i];
+         ext2File->blockGroupDescriptorstable[group].bg_pad = bgdt->bg_reserved[i];
     }
 
     return 0;
@@ -731,8 +731,6 @@ int32_t fetchInode(struct Ext2File *ext2File, uint32_t iNum, struct Inode *buf) 
     *buf = ((Inode *)tempBlock)[offsetInBlock];
 
 }
-
-
 
 int32_t writeInode(struct Ext2File *ext2File,uint32_t iNum, void *buf) {
     // Group number where the desired inode is located
@@ -873,8 +871,6 @@ int32_t freeInode(struct Ext2File *ext2File, uint32_t iNum) {
     // Write the array with manipulated bitmap back to the group
     writeBlock(ext2File, bitmapPostition, bitmap);
 }
-
-
 
 int32_t fetchBlockFromFile(struct Ext2File *ext2File, struct Inode *inode, uint32_t bNum, void *buf) {
     // Pointer which will be used to point to the blockList
@@ -1266,7 +1262,7 @@ int main () {
 
     /** Test Step 6 **/
 
-    /*
+
     char name[256];
     uint32_t iNum;
     Directory *d;
@@ -1284,7 +1280,7 @@ int main () {
         cout << "Inode: " << iNum << " name: [" << name << "]" << endl;
     }
     //closeDir(d);
-    */
+
 
 
     /** Test Step 7 **/
@@ -1301,10 +1297,10 @@ uint32_t copyVDIFileToHost(Ext2File* ext2File, char *path, char *fileName){
     Inode inode;
     uint8_t *block = new uint8_t[ext2File->superBlocks.s_log_block_size];
 
-    int inodeNum = traversePath(ext2File, fileName);
+    uint32_t inodeNum = traversePath(ext2File, fileName);
     fetchInode(ext2File, inodeNum, &inode);
 
-    int fileDescriptor = open(path, O_WRONLY|O_CREAT, 0666); //The fileDescriptor should be 4
+    int fileDescriptor = open(path, O_WRONLY|O_CREAT|O_BINARY|O_TRUNC, 0666); //The fileDescriptor should be 4
     cout << "File Descriptor: " << fileDescriptor <<endl;
 
     if(fileDescriptor == 4){
@@ -1326,4 +1322,3 @@ uint32_t copyVDIFileToHost(Ext2File* ext2File, char *path, char *fileName){
     cout << "File size: " << inode.i_size <<endl;
 
 }
-
